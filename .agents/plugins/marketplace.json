@@ -1,0 +1,20 @@
+{
+  "name": "computer-use-local",
+  "interface": {
+    "displayName": "computer_use Local"
+  },
+  "plugins": [
+    {
+      "name": "computer-use",
+      "source": {
+        "source": "local",
+        "path": "./computer_use"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Engineering"
+    }
+  ]
+}

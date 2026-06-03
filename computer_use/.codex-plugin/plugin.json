@@ -1,0 +1,37 @@
+{
+  "name": "computer-use",
+  "version": "0.1.0",
+  "description": "Local Windows computer-use plugin with skills and MCP tools for discovery, capture, and UI automation.",
+  "author": {
+    "name": "computer_use project"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "codex",
+    "computer-use",
+    "windows",
+    "mcp",
+    "automation"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Computer Use",
+    "shortDescription": "Inspect and control Windows apps through the local computer_use project.",
+    "longDescription": "This plugin packages the local computer_use project as an agent plugin. It ships MCP tools for window discovery, snapshots, text input, pointer input, UIA element actions, and turn-scoped lifecycle handling, plus a skill that teaches the expected workflow for this repository's implementation.",
+    "developerName": "computer_use project",
+    "category": "Engineering",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Inspect a Windows app with the local computer_use plugin.",
+      "Capture a window snapshot and act on its controls.",
+      "Automate a Windows workflow through the plugin MCP tools."
+    ],
+    "brandColor": "#0F4C81",
+    "screenshots": []
+  }
+}

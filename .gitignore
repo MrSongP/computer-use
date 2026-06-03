@@ -1,0 +1,28 @@
+# IDE / Editor
+.idea/
+
+# Claude Code session & config
+.claude/
+
+# Local tool / cache
+.omx/
+
+# Node / TypeScript
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# .NET / Native host build output
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+
+# Local scratch / smoke test sandboxes
+**/.tmp-*/
+**/.tmp*/
+
+# Local bug repro artifacts
+bug/

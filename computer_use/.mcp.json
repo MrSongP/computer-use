@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "computer-use": {
+      "command": "node",
+      "args": [
+        "--import",
+        "tsx",
+        "./src/adapters/claude-code/mcp-entrypoint.ts"
+      ],
+      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "computer-use-ts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Windows computer-use plugin implementation with Codex and Claude Code adapters.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "codex:helper": "node --import tsx ./src/adapters/codex/helper-entrypoint.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/**/*.test.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}
