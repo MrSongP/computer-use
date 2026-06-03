@@ -1,0 +1,18 @@
+{
+  "name": "computer-use-local",
+  "owner": {
+    "name": "computer_use project"
+  },
+  "description": "Local marketplace for the computer_use Windows automation plugin.",
+  "plugins": [
+    {
+      "name": "computer-use",
+      "source": "./computer_use",
+      "description": "Local Windows computer-use plugin exposed through the repository MCP stdio adapter.",
+      "version": "0.1.0",
+      "author": {
+        "name": "computer_use project"
+      }
+    }
+  ]
+}
