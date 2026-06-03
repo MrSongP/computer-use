@@ -2,7 +2,7 @@
 
 中文 | [English](#english)
 
-`computer_use` 是一个本地 Windows computer-use 插件项目。它把窗口发现、窗口截图、UIA 文本树、鼠标/键盘输入、窗口激活、生命周期和 trace 统一到一个 TypeScript runtime 中，并通过 Codex 插件 manifest 与 MCP server 暴露给 Codex 使用。
+`computer_use` 是一个本地 Windows computer-use 插件项目。它把窗口发现、窗口截图、UIA 文本树、鼠标/键盘输入、窗口激活、生命周期和 trace 统一到一个 TypeScript runtime 中，并通过插件 manifest 与 MCP server 暴露给 Codex 和 Claude Code 使用。
 
 这个仓库不是官方 OpenAI `computer-use` 客户端的调包包装。项目插件根目录是 [`computer_use`](./computer_use/)，真实入口是 [`computer_use/.codex-plugin/plugin.json`](./computer_use/.codex-plugin/plugin.json)、[`computer_use/.mcp.json`](./computer_use/.mcp.json) 和 [`computer_use/skills/computer-use/SKILL.md`](./computer_use/skills/computer-use/SKILL.md)。
 
@@ -14,24 +14,46 @@
 - `end_turn`、turn lifecycle、interrupt 和 trace evidence
 - Codex adapter、Claude Code MCP adapter、native-host Windows bridge
 
-## 安装到 Codex
+## 安装到 Claude Code
 
-从仓库根目录注册本地 marketplace：
+从仓库根目录执行一键安装脚本：
 
 ```powershell
 cd G:\Desktop\computer_use
-codex plugin marketplace add G:\Desktop\computer_use
+powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
 ```
 
-然后在 Codex 中安装：
+这个脚本会完成：
 
-1. 打开 Codex App 的 **Plugins**，或在 Codex CLI 中输入 `/plugins`。
-2. 切到 `computer_use Local` / `computer-use-local` marketplace。
-3. 安装 `computer-use`。
-4. 开一个新线程，让 Codex 重新加载插件 skill 和 MCP tools。
-5. 在新线程中直接描述 Windows 自动化任务，或明确要求使用 `@computer-use` / `computer-use`。
+1. `npm run build`
+2. `claude plugin validate` 校验 root marketplace 与插件 manifest
+3. `node .\scripts\smoke-claude-mcp.mjs` 验证 MCP 握手与工具注册
+4. `claude plugin marketplace add G:\Desktop\computer_use`
+5. `claude plugin install computer-use@computer-use-local --scope user`
 
-本地 marketplace 文件在 [`.agents/plugins/marketplace.json`](./.agents/plugins/marketplace.json)，指向 [`./computer_use`](./computer_use/) 插件目录。更新插件后，重启 Codex 或重新安装插件，再从新线程验证。
+安装完成后，在当前 Claude Code 会话里执行 `/reload-plugins`，或者直接开一个新会话。
+
+Claude Code 的 marketplace manifest 在 [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json)，它会把 [`./computer_use`](./computer_use/) 作为真实插件目录安装。
+
+## 安装到 Codex
+
+从仓库根目录执行一键安装脚本：
+
+```powershell
+cd G:\Desktop\computer_use
+powershell -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
+```
+
+这个脚本会完成：
+
+1. `npm run build`
+2. `node .\scripts\smoke-claude-mcp.mjs` 验证共享 MCP 入口
+3. `codex plugin marketplace add G:\Desktop\computer_use`
+4. `codex plugin add computer-use@computer-use-local`
+
+安装完成后，开一个新线程，让 Codex 重新加载插件 skill 和 MCP tools，然后直接描述 Windows 自动化任务，或明确要求使用 `@computer-use` / `computer-use`。
+
+Codex 的 marketplace 文件在 [`.agents/plugins/marketplace.json`](./.agents/plugins/marketplace.json)，指向 [`./computer_use`](./computer_use/) 插件目录。
 
 ## 开发与验证
 
@@ -49,6 +71,8 @@ npx tsx --test tests/integration/codex-adapter.test.ts
 npx tsx --test tests/integration/claude-code-adapter.test.ts
 npx tsx --test tests/integration/stdio-runtime.test.ts
 npx tsx --test tests/integration/native-host-p5-smoke.test.ts
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor-computer-use.ps1 -Target Claude
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor-computer-use.ps1 -Target Codex
 ```
 
 `npm run codex:helper` 只用于开发调试本地 JSON-RPC helper，不是 Codex 安装插件后的常规使用入口。
@@ -73,7 +97,7 @@ npx tsx --test tests/integration/native-host-p5-smoke.test.ts
 
 ## English
 
-`computer_use` is a local Windows computer-use plugin project. It unifies window discovery, window snapshots, UIA text trees, mouse/keyboard input, window activation, turn lifecycle, and trace evidence in a TypeScript runtime, then exposes that runtime to Codex through a plugin manifest and MCP server.
+`computer_use` is a local Windows computer-use plugin project. It unifies window discovery, window snapshots, UIA text trees, mouse/keyboard input, window activation, turn lifecycle, and trace evidence in a TypeScript runtime, then exposes that runtime to Codex and Claude Code through plugin manifests and an MCP server.
 
 This repository is not a thin wrapper around the official OpenAI `computer-use` client. The plugin root is [`computer_use`](./computer_use/), and the real entrypoints are [`computer_use/.codex-plugin/plugin.json`](./computer_use/.codex-plugin/plugin.json), [`computer_use/.mcp.json`](./computer_use/.mcp.json), and [`computer_use/skills/computer-use/SKILL.md`](./computer_use/skills/computer-use/SKILL.md).
 
@@ -85,24 +109,35 @@ This repository is not a thin wrapper around the official OpenAI `computer-use` 
 - `end_turn`, turn lifecycle, interrupts, and trace evidence
 - Codex adapter, Claude Code MCP adapter, and a Windows native-host bridge
 
-## Install In Codex
+## Install In Claude Code
 
-Register the local marketplace from the repository root:
+Run the dedicated Claude Code installer from the repository root:
 
 ```powershell
 cd G:\Desktop\computer_use
-codex plugin marketplace add G:\Desktop\computer_use
+powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
 ```
 
-Then install it in Codex:
+It builds the runtime, validates the Claude marketplace and plugin manifests, runs an MCP smoke test, registers the local marketplace, and installs `computer-use@computer-use-local`.
 
-1. Open **Plugins** in the Codex app, or type `/plugins` in Codex CLI.
-2. Select the `computer_use Local` / `computer-use-local` marketplace.
-3. Install `computer-use`.
-4. Start a new thread so Codex reloads the plugin skill and MCP tools.
-5. Ask for the Windows automation task directly, or explicitly mention `@computer-use` / `computer-use`.
+After the installer finishes, run `/reload-plugins` in the current Claude Code session or start a new session.
 
-The local marketplace file is [`.agents/plugins/marketplace.json`](./.agents/plugins/marketplace.json), and it points to the [`./computer_use`](./computer_use/) plugin directory. After changing the plugin, restart Codex or reinstall the plugin, then verify from a new thread.
+The Claude Code marketplace manifest lives at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) and points at the real plugin root under [`./computer_use`](./computer_use/).
+
+## Install In Codex
+
+Run the dedicated Codex installer from the repository root:
+
+```powershell
+cd G:\Desktop\computer_use
+powershell -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
+```
+
+It builds the runtime, runs the shared MCP smoke test, registers the local marketplace, and installs `computer-use@computer-use-local`.
+
+After the installer finishes, start a new thread so Codex reloads the plugin skill and MCP tools.
+
+The local Codex marketplace file is [`.agents/plugins/marketplace.json`](./.agents/plugins/marketplace.json), and it points to the [`./computer_use`](./computer_use/) plugin directory.
 
 ## Development And Verification
 
@@ -120,6 +155,8 @@ npx tsx --test tests/integration/codex-adapter.test.ts
 npx tsx --test tests/integration/claude-code-adapter.test.ts
 npx tsx --test tests/integration/stdio-runtime.test.ts
 npx tsx --test tests/integration/native-host-p5-smoke.test.ts
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor-computer-use.ps1 -Target Claude
+powershell -ExecutionPolicy Bypass -File .\scripts\doctor-computer-use.ps1 -Target Codex
 ```
 
 `npm run codex:helper` is only a local JSON-RPC helper harness for development. It is not the normal entrypoint after installing the Codex plugin.

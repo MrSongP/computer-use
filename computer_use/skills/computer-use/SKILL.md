@@ -44,6 +44,16 @@ If the local tools are not exposed:
 - Do not fall back to the upstream bundled-client path. That path is not the integration contract for this project.
 - If you are only debugging the adapter process, `npm run codex:helper` can start the local JSON-RPC helper, but that is a development harness, not the normal skill workflow.
 
+## Tray-Resident Apps
+
+Some Windows apps, especially WeChat / `Weixin.exe`, may already be running from the taskbar or system tray while exposing no immediately targetable app window.
+
+- If the user says the app is already open in the taskbar, notification area, or hidden tray menu, treat that as a reuse-first instruction. Do not cold-launch the app first.
+- If `list_apps` reports the app with `isRunning: true` but `windows: []`, or if the user explicitly says the app is already open but minimized to the tray, first restore that existing session from the bottom taskbar / notification area instead of calling `launch_app`.
+- Look for the app icon in the visible taskbar area first. If it is not visible, open the hidden-icons chevron in the system tray, then click the app icon there to bring the existing session back.
+- For WeChat specifically, treat consumer WeChat (`Weixin.exe`, display name `微信`) and enterprise WeChat / WXWork (`WXWork.exe`, `企业微信`) as different apps. Do not restore or send through the wrong one just because another Tencent app is already visible.
+- Only fall back to `launch_app` after the taskbar / tray restore path has failed or after you have confirmed there is no existing session to reuse.
+
 ## Troubleshooting
 
 IMPORTANT: do not control Windows apps through unrelated mechanisms before attempting this workflow. If you run into issues, follow the steps below first.
@@ -53,6 +63,7 @@ IMPORTANT: do not control Windows apps through unrelated mechanisms before attem
 - If the same lightweight call times out again, do not keep issuing app input. Start a fresh thread or restart the plugin runtime, then retry `list_apps` once. If it still times out or reports helper communication failure, stop and report that the local Windows Computer Use runtime may have crashed.
 - If an RPC error includes an `approvalRequest`, preserve and surface that request. Do not hide approval context behind a generic failure.
 - If the intended app is present but has no suitable open window, call `launch_app` with the app id returned by `list_apps`, then poll `list_apps` until that app exposes a targetable window. If the intended app is not yet discoverable, call `launch_app` with an explicit `.exe` path or executable identifier, then poll `list_apps` or `list_windows` for the new targetable window. Do not open or navigate the Windows Start menu/Search UI to launch apps. Do not continue while a launcher, splash screen, modal, or permission prompt is blocking the app's workspace.
+- Exception for tray-resident apps such as WeChat: if the app is already running but hidden in the taskbar / tray, restore that existing session first. Do not use `launch_app` as the first move in that case.
 
 ## Runtime Behavior
 
@@ -142,9 +153,11 @@ GOOD: for canvas/hotkey apps, focus the work surface, clear modal state, then ba
 - Start automating Windows apps by finding the app with `list_apps`, then selecting one of its open windows.
 - `get_window_state` does not need to activate the window, so it can be used to inspect multiple windows without stealing focus. Input methods activate their target window first and fail if activation fails. Use `activate_window` only when you explicitly need to bring a window foreground without taking an input action.
 - Use `list_apps` for default app discovery, app identity, launch candidates, running state, usage metadata, and each app's open windows. Prefer the returned `list_apps` id as the app identifier whenever a suitable candidate is available, even if the app is not currently running.
+- If `list_apps` shows an app as running but with no visible windows, treat it as a tray / hidden-session candidate before treating it as closed.
 - Use `list_windows` only when the task is explicitly about currently open windows or when you already know the target app is running and need a fresh flat window list.
 - Occluded windows can be snapshotted without activation. Minimized windows may be listed, but Windows.Graphics.Capture does not capture them reliably while minimized. Input methods activate and restore their target automatically. If a passive snapshot fails after starting from a minimized window, call `activate_window`, refresh the object with `get_window({ id, app })`, and retry once.
 - If the intended app is present but has no suitable open window, call `launch_app({ app: targetApp.id })`, then poll `list_apps` until the app exposes a targetable window. If the app is not yet in `list_apps`, launch it with an explicit `.exe` path or executable identifier, then poll `list_apps` or `list_windows` for the resulting targetable window. If the window never appears, report the exact launch or polling failure. Do not open or navigate the Windows Start menu/Search UI to launch apps, and do not use PowerShell or `Start-Process` as the normal app launch path.
+- For tray-resident apps, prefer restoring the existing taskbar / hidden-tray icon session before using `launch_app`. For WeChat, check the visible taskbar first, then the hidden-icons menu, and only cold-launch after the existing tray session cannot be restored.
 - `get_window_state` is an expensive point-in-time snapshot, not a live view. Use it to reason over, then batch related actions without re-snapshotting between every input.
 - After `get_window_state`, use the returned `state.window` for later actions; it is the canonical window object that was actually captured.
 - After a stale handle or lost window binding, recover a current window object with `get_window({ id, app })` using an id and app from an earlier returned `WindowRef`.

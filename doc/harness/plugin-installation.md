@@ -5,12 +5,35 @@
 ## 当前安装模型
 
 - 插件根目录：`G:\Desktop\computer_use\computer_use`
+- Claude marketplace：`G:\Desktop\computer_use\.claude-plugin\marketplace.json`
 - Codex manifest：`computer_use\.codex-plugin\plugin.json`
+- Claude manifest：`computer_use\.claude-plugin\plugin.json`
 - MCP manifest：`computer_use\.mcp.json`
 - skill：`computer_use\skills\computer-use\SKILL.md`
 - repo-local marketplace：`.agents\plugins\marketplace.json`
+- 宿主安装脚本：`scripts\install-claude-code.ps1`、`scripts\install-codex.ps1`
 
 `.agents\plugins\marketplace.json` 的 `source.path` 指向 `./computer_use`，也就是本仓库里的真实插件根目录。
+
+## Claude Code 安装步骤
+
+从仓库根目录执行：
+
+```powershell
+cd G:\Desktop\computer_use
+powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
+```
+
+这个脚本会完成：
+
+1. `npm run build`
+2. `claude plugin validate G:\Desktop\computer_use`
+3. `claude plugin validate G:\Desktop\computer_use\computer_use`
+4. `node .\scripts\smoke-claude-mcp.mjs`
+5. `claude plugin marketplace add G:\Desktop\computer_use`
+6. `claude plugin install computer-use@computer-use-local --scope user`
+
+当前 Claude Code 会话需要执行 `/reload-plugins` 或直接开新会话，旧会话不会自动注入新工具。
 
 ## Codex 安装步骤
 
@@ -18,16 +41,17 @@
 
 ```powershell
 cd G:\Desktop\computer_use
-codex plugin marketplace add G:\Desktop\computer_use
+powershell -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
 ```
 
-然后在 Codex App 的 **Plugins** 或 Codex CLI 的 `/plugins` 中：
+这个脚本会完成：
 
-1. 选择 `computer_use Local` / `computer-use-local` marketplace。
-2. 安装 `computer-use`。
-3. 开新线程验证 skill 与 MCP tools 是否加载。
+1. `npm run build`
+2. `node .\scripts\smoke-claude-mcp.mjs`
+3. `codex plugin marketplace add G:\Desktop\computer_use`
+4. `codex plugin add computer-use@computer-use-local`
 
-新线程是必要边界；旧线程可能仍然看不到刚安装或刚更新的插件能力。
+Codex 这边的正常验证边界仍然是新线程；旧线程可能仍然看不到刚安装或刚更新的插件能力。
 
 ## 不再保留的入口
 
@@ -46,6 +70,9 @@ codex plugin marketplace add G:\Desktop\computer_use
 - `rg -n "computer-use-client" computer_use\skills computer_use\src`
 - 检查 `computer_use\skills\computer-use\SKILL.md` 没有恢复官方客户端 import、bootstrap 或旧 JS 会话主路径。
 - `npm run typecheck`
+- `node .\scripts\smoke-claude-mcp.mjs`
+- `powershell -ExecutionPolicy Bypass -File .\scripts\doctor-computer-use.ps1 -Target Claude`
+- `powershell -ExecutionPolicy Bypass -File .\scripts\doctor-computer-use.ps1 -Target Codex`
 - 与改动相关的 adapter/integration test
 
 如果只是文档或 skill 文本修改，至少跑一次 `npm run typecheck` 并确认 `SKILL.md` 没有把主路径带回旧 compatibility client。

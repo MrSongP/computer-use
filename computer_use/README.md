@@ -9,17 +9,22 @@
 这个目录本身就是插件根目录，关键文件是：
 
 - [`.codex-plugin/plugin.json`](./.codex-plugin/plugin.json)
+- [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)
 - [`.mcp.json`](./.mcp.json)
 - [`skills/computer-use/SKILL.md`](./skills/computer-use/SKILL.md)
 
-从仓库根目录注册本地 marketplace：
+Claude Code 和 Codex 分开安装，分别使用仓库根目录下的宿主脚本：
 
 ```powershell
 cd G:\Desktop\computer_use
-codex plugin marketplace add G:\Desktop\computer_use
+powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
 ```
 
-然后在 Codex App 的 **Plugins** 或 Codex CLI 的 `/plugins` 里选择 `computer_use Local` / `computer-use-local`，安装 `computer-use`，并开新线程验证插件工具是否加载。
+- `install-claude-code.ps1` 负责 Claude Code marketplace 注册、插件重装和 doctor。
+- `install-codex.ps1` 负责 Codex marketplace 注册、插件重装和 doctor。
+- `install-claude-code.ps1` 会先 `npm run build`、做 Claude manifest 校验，并跑 MCP smoke test。
+- `install-codex.ps1` 会先 `npm run build`，并跑共享 MCP smoke test。
 
 ## 能力
 
@@ -34,6 +39,8 @@ codex plugin marketplace add G:\Desktop\computer_use
 - `npm run codex:helper`
 - `npm run typecheck`
 - `npm test`
+- `powershell -ExecutionPolicy Bypass -File ..\scripts\doctor-computer-use.ps1 -Target Claude`
+- `powershell -ExecutionPolicy Bypass -File ..\scripts\doctor-computer-use.ps1 -Target Codex`
 
 `npm run codex:helper` 只用于 adapter smoke test 或手动调试本地 JSON-RPC helper。Codex 安装插件后不需要根目录的 `scripts/computer-use-client.mjs`，该兼容脚本已移除。
 
@@ -42,7 +49,7 @@ codex plugin marketplace add G:\Desktop\computer_use
 - Windows 上 `createWindowsRuntime()` 默认使用 resident native-host bridge。
 - 测试默认使用 mock bridge，避免无意输入真实桌面。
 - native-host smoke test 会用 Windows Forms fixture 验证截图与 UIA pattern action。
-- `.mcp.json` 通过 `node --import tsx ./src/adapters/claude-code/mcp-entrypoint.ts` 暴露 MCP stdio server。
+- `.mcp.json` 通过 `node ./dist/src/adapters/claude-code/mcp-entrypoint.js` 暴露 MCP stdio server。
 
 ## Trace / Debug
 
@@ -72,17 +79,22 @@ codex plugin marketplace add G:\Desktop\computer_use
 This directory is the plugin root. Key files:
 
 - [`.codex-plugin/plugin.json`](./.codex-plugin/plugin.json)
+- [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)
 - [`.mcp.json`](./.mcp.json)
 - [`skills/computer-use/SKILL.md`](./skills/computer-use/SKILL.md)
 
-Register the local marketplace from the repository root:
+Claude Code and Codex install separately through the repository-root host scripts:
 
 ```powershell
 cd G:\Desktop\computer_use
-codex plugin marketplace add G:\Desktop\computer_use
+powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
 ```
 
-Then open **Plugins** in the Codex app or `/plugins` in Codex CLI, choose `computer_use Local` / `computer-use-local`, install `computer-use`, and start a new thread to verify that the plugin tools load.
+- `install-claude-code.ps1` handles the Claude Code marketplace, reinstall, and doctor flow.
+- `install-codex.ps1` handles the Codex marketplace, reinstall, and doctor flow.
+- `install-claude-code.ps1` builds the runtime first, validates the Claude manifests, and runs the MCP smoke test.
+- `install-codex.ps1` builds the runtime first and runs the shared MCP smoke test.
 
 ## Capabilities
 
@@ -97,6 +109,8 @@ Then open **Plugins** in the Codex app or `/plugins` in Codex CLI, choose `compu
 - `npm run codex:helper`
 - `npm run typecheck`
 - `npm test`
+- `powershell -ExecutionPolicy Bypass -File ..\scripts\doctor-computer-use.ps1 -Target Claude`
+- `powershell -ExecutionPolicy Bypass -File ..\scripts\doctor-computer-use.ps1 -Target Codex`
 
 `npm run codex:helper` is only for adapter smoke tests or manual local JSON-RPC helper debugging. After installing the Codex plugin, the root `scripts/computer-use-client.mjs` compatibility script is not needed and has been removed.
 
@@ -105,7 +119,7 @@ Then open **Plugins** in the Codex app or `/plugins` in Codex CLI, choose `compu
 - On Windows, `createWindowsRuntime()` defaults to the resident native-host bridge.
 - Tests use a mock bridge by default to avoid accidental real desktop input.
 - The native-host smoke test validates screenshots and UIA pattern actions against a Windows Forms fixture.
-- `.mcp.json` exposes the MCP stdio server through `node --import tsx ./src/adapters/claude-code/mcp-entrypoint.ts`.
+- `.mcp.json` exposes the MCP stdio server through `node ./dist/src/adapters/claude-code/mcp-entrypoint.js`.
 
 ## Trace / Debug
 

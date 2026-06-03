@@ -11,25 +11,38 @@
   - action / lifecycle：`activate_window`、`click`、`press_key`、`type_text`、`scroll`、`drag`、`end_turn`
 - trace/debug 已经收敛为共享能力，可通过 env、runtime config 或 request meta 开关。
 - 插件根目录是 `G:\Desktop\computer_use\computer_use`，不是根目录 `scripts` 下的官方兼容客户端包装。
+- Claude Code 安装入口是 repo-local marketplace：`G:\Desktop\computer_use\.claude-plugin\marketplace.json`。
 - Codex 安装入口是 repo-local marketplace：`G:\Desktop\computer_use\.agents\plugins\marketplace.json`。
 
 ## 2. 安装与使用入口
 
-从仓库根目录注册本地 marketplace：
+Claude Code 与 Codex 分开安装。
+
+Claude Code：
 
 ```powershell
 cd G:\Desktop\computer_use
-codex plugin marketplace add G:\Desktop\computer_use
+powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
 ```
 
-然后在 Codex App 的 **Plugins** 或 Codex CLI 的 `/plugins` 里选择 `computer_use Local` / `computer-use-local`，安装 `computer-use`。安装或重新安装后必须开新线程验证 skill 与 MCP tools 是否加载。
+Codex：
+
+```powershell
+cd G:\Desktop\computer_use
+powershell -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
+```
+
+`install-claude-code.ps1` 会注册 Claude marketplace、重装 `computer-use@computer-use-local`，并提示你在当前会话执行 `/reload-plugins` 或开新会话。
+
+`install-codex.ps1` 会注册 Codex marketplace、重装 `computer-use@computer-use-local`，并提示你开新线程验证 skill 与 MCP tools 是否加载。
 
 安装后的正常入口：
 
 - skill：`computer_use\skills\computer-use\SKILL.md`
 - MCP manifest：`computer_use\.mcp.json`
-- MCP entrypoint：`computer_use\src\adapters\claude-code\mcp-entrypoint.ts`
+- MCP entrypoint：`computer_use\dist\src\adapters\claude-code\mcp-entrypoint.js`
 - Codex manifest：`computer_use\.codex-plugin\plugin.json`
+- Claude manifest：`computer_use\.claude-plugin\plugin.json`
 
 `scripts\computer-use-client.mjs` 不再需要。它只会把执行路径带回官方缓存里的 compatibility client，不能代表这个项目的 TypeScript runtime、native-host bridge、MCP schema 或测试证据。
 
@@ -72,6 +85,9 @@ codex plugin marketplace add G:\Desktop\computer_use
 - `npx tsx --test tests/integration/claude-code-adapter.test.ts`
 - `npx tsx --test tests/integration/native-host-p5-smoke.test.ts`
 - `npx tsx --test tests/integration/stdio-runtime.test.ts`
+- `node .\scripts\smoke-claude-mcp.mjs`
+- `powershell -ExecutionPolicy Bypass -File .\scripts\doctor-computer-use.ps1 -Target Claude`
+- `powershell -ExecutionPolicy Bypass -File .\scripts\doctor-computer-use.ps1 -Target Codex`
 
 ## 6. 为什么文档被收缩
 

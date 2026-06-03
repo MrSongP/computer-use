@@ -252,7 +252,7 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
     case "click":
       return {
         type: "object",
-        description: "Click at window-relative coordinates or target an indexed accessibility element.",
+        description: "Click at window-relative coordinates or target an indexed accessibility element. Provide either x+y coordinates or element_index; runtime validation enforces that contract.",
         properties: {
           window: windowRefSchema,
           x: {
@@ -280,14 +280,6 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
           }
         },
         required: ["window"],
-        anyOf: [
-          {
-            required: ["window", "x", "y"]
-          },
-          {
-            required: ["window", "element_index"]
-          }
-        ],
         additionalProperties: false
       };
 
@@ -341,7 +333,7 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
     case "scroll":
       return {
         type: "object",
-        description: "Send wheel input at a window-relative point.",
+        description: "Send wheel input at a window-relative point. Provide x+y coordinates and at least one of scroll_x or scroll_y; runtime validation enforces that contract.",
         properties: {
           window: windowRefSchema,
           x: {
@@ -366,14 +358,6 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
           }
         },
         required: ["window", "x", "y"],
-        anyOf: [
-          {
-            required: ["window", "x", "y", "scroll_x"]
-          },
-          {
-            required: ["window", "x", "y", "scroll_y"]
-          }
-        ],
         additionalProperties: false
       };
 

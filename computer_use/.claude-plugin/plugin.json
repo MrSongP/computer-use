@@ -13,5 +13,14 @@
     "computer-use",
     "windows",
     "mcp"
-  ]
+  ],
+  "mcpServers": {
+    "computer-use": {
+      "command": "node",
+      "args": [
+        "./dist/src/adapters/claude-code/mcp-entrypoint.js"
+      ],
+      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+    }
+  }
 }
