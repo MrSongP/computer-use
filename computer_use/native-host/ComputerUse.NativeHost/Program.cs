@@ -684,6 +684,7 @@ namespace ComputerUse.NativeHost
             ThrowIfInterrupted();
 
             var windows = EnumerateWindows();
+            var runningExecutablePaths = EnumerateRunningExecutablePaths();
             var windowsByApp = new Dictionary<string, List<Dictionary<string, object>>>(StringComparer.OrdinalIgnoreCase);
             foreach (Dictionary<string, object> window in windows)
             {
@@ -703,7 +704,7 @@ namespace ComputerUse.NativeHost
             foreach (var app in EnumerateShellApps())
             {
                 ThrowIfInterrupted();
-                merged[app.Id] = BuildAppPayload(app, windowsByApp);
+                merged[app.Id] = BuildAppPayload(app, windowsByApp, runningExecutablePaths);
             }
 
             foreach (var entry in windowsByApp)
@@ -720,7 +721,7 @@ namespace ComputerUse.NativeHost
                     ExecutablePath = entry.Key,
                     ActivationModel = "executable_path"
                 };
-                merged[app.Id] = BuildAppPayload(app, windowsByApp);
+                merged[app.Id] = BuildAppPayload(app, windowsByApp, runningExecutablePaths);
             }
 
             var result = new List<Dictionary<string, object>>(merged.Values);
@@ -757,6 +758,15 @@ namespace ComputerUse.NativeHost
 
             if (LooksLikeExecutablePath(normalized))
             {
+                if (HasRunningExecutableProcess(normalized))
+                {
+                    throw NativeHostException.NativeExecution(
+                        "launchApp",
+                        "The app is already running without a visible top-level window. Restore the existing session from the taskbar or system tray instead of cold-launching it.",
+                        CreateDetails("app", normalized)
+                    );
+                }
+
                 LaunchProcess(normalized, null, Path.GetDirectoryName(normalized));
                 return;
             }
@@ -1789,16 +1799,19 @@ namespace ComputerUse.NativeHost
 
         private Dictionary<string, object> BuildAppPayload(
             AppDescriptorDto app,
-            IDictionary<string, List<Dictionary<string, object>>> windowsByApp
+            IDictionary<string, List<Dictionary<string, object>>> windowsByApp,
+            ISet<string> runningExecutablePaths
         )
         {
             List<Dictionary<string, object>> windows;
             windowsByApp.TryGetValue(app.Id, out windows);
+            var hasVisibleWindow = windows != null && windows.Count > 0;
+            var hasRunningProcess = HasRunningExecutableProcess(app, runningExecutablePaths);
 
             var payload = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             payload["id"] = app.Id;
             payload["windows"] = windows ?? new List<Dictionary<string, object>>();
-            payload["isRunning"] = windows != null && windows.Count > 0;
+            payload["isRunning"] = hasVisibleWindow || hasRunningProcess;
             payload["activationModel"] = app.ActivationModel;
 
             if (!string.IsNullOrWhiteSpace(app.DisplayName))
@@ -1812,6 +1825,65 @@ namespace ComputerUse.NativeHost
             }
 
             return payload;
+        }
+
+        private bool HasRunningExecutableProcess(AppDescriptorDto app, ISet<string> runningExecutablePaths)
+        {
+            if (!string.IsNullOrWhiteSpace(app.ExecutablePath) && runningExecutablePaths.Contains(app.ExecutablePath))
+            {
+                return true;
+            }
+
+            return LooksLikeExecutablePath(app.Id) && runningExecutablePaths.Contains(app.Id);
+        }
+
+        private HashSet<string> EnumerateRunningExecutablePaths()
+        {
+            var running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var process in Process.GetProcesses())
+            {
+                try
+                {
+                    var processPath = GetProcessPath((uint)process.Id);
+                    if (!string.IsNullOrWhiteSpace(processPath))
+                    {
+                        running.Add(processPath);
+                    }
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    process.Dispose();
+                }
+            }
+
+            return running;
+        }
+
+        private bool HasRunningExecutableProcess(string executablePath)
+        {
+            foreach (var process in Process.GetProcesses())
+            {
+                try
+                {
+                    var processPath = GetProcessPath((uint)process.Id);
+                    if (string.Equals(processPath, executablePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    process.Dispose();
+                }
+            }
+
+            return false;
         }
 
         private static object InvokeCom(object target, string name, params object[] args)

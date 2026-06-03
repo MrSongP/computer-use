@@ -1,6 +1,7 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import readline from "node:readline";
@@ -33,11 +34,13 @@ const WINDOWS_WINMD_CANDIDATES = [
   "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata\\Facade\\Windows.WinMD",
   "C:\\Program Files (x86)\\Windows Kits\\8.1\\References\\CommonConfiguration\\Neutral\\Annotated\\Windows.winmd"
 ] as const;
-const DEFAULT_PROJECT_PATH = fileURLToPath(
-  new URL("../../../native-host/ComputerUse.NativeHost/ComputerUse.NativeHost.csproj", import.meta.url)
+const DEFAULT_PROJECT_PATH = resolveNativeHostPath(
+  "../../../native-host/ComputerUse.NativeHost/ComputerUse.NativeHost.csproj",
+  "../../../../native-host/ComputerUse.NativeHost/ComputerUse.NativeHost.csproj"
 );
-const DEFAULT_PROGRAM_PATH = fileURLToPath(
-  new URL("../../../native-host/ComputerUse.NativeHost/Program.cs", import.meta.url)
+const DEFAULT_PROGRAM_PATH = resolveNativeHostPath(
+  "../../../native-host/ComputerUse.NativeHost/Program.cs",
+  "../../../../native-host/ComputerUse.NativeHost/Program.cs"
 );
 
 interface NativeHostRequest {
@@ -643,6 +646,17 @@ function getNativeHostAssemblyPath(projectPath: string, buildConfiguration: stri
 
 function getNativeHostExecutablePath(projectPath: string, buildConfiguration: string): string {
   return path.join(path.dirname(projectPath), "bin", buildConfiguration, "ComputerUse.NativeHost.exe");
+}
+
+function resolveNativeHostPath(...relativeCandidates: readonly string[]): string {
+  for (const candidate of relativeCandidates) {
+    const resolved = fileURLToPath(new URL(candidate, import.meta.url));
+    if (existsSync(resolved)) {
+      return resolved;
+    }
+  }
+
+  return fileURLToPath(new URL(relativeCandidates[0]!, import.meta.url));
 }
 
 async function resolveCscExecutable(preferred?: string): Promise<string | undefined> {
