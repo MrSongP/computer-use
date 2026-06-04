@@ -17,7 +17,7 @@ import type {
 import type { WindowRef } from "../../core/contracts/window.js";
 import { resolveVirtualScreenMetrics, type VirtualScreenMetrics } from "../input/pointer-primitives.js";
 import type { KeyboardInput, PointerClick, PointerDrag, PointerScroll } from "../shared/win32-types.js";
-import type { NativeBridge } from "./native-bridge.js";
+import type { NativeAppLaunchOptions, NativeBridge } from "./native-bridge.js";
 import { PowerShellNativeBridge } from "./powershell-driver.js";
 
 const execFileAsync = promisify(execFile);
@@ -56,6 +56,7 @@ interface NativeHostResponse {
   error?: string;
   code?: string;
   details?: Record<string, unknown>;
+  guidance?: Record<string, unknown>;
 }
 
 interface PendingRequest {
@@ -238,10 +239,14 @@ export class NativeHostBridge implements NativeBridge {
     );
   }
 
-  async launchApp(app: AppIdentifier): Promise<void> {
+  async launchApp(app: AppIdentifier, options?: NativeAppLaunchOptions): Promise<void> {
     return this.invokeOrFallback(
-      () => this.invokePrimary("launchApp", { app, meta: this.currentTurnMeta ?? null }),
-      () => this.invokeFallback(() => this.fallback.launchApp(app))
+      () => this.invokePrimary("launchApp", {
+        app,
+        launchMode: options?.launchMode ?? null,
+        meta: this.currentTurnMeta ?? null
+      }),
+      () => this.invokeFallback(() => this.fallback.launchApp(app, options))
     );
   }
 
@@ -517,7 +522,14 @@ export class NativeHostBridge implements NativeBridge {
       return;
     }
 
-    pending.reject(new NativeHostCommandError(response.error ?? "Native host command failed.", response.code, response.details));
+    pending.reject(
+      new NativeHostCommandError(
+        response.error ?? "Native host command failed.",
+        response.code,
+        response.details,
+        response.guidance
+      )
+    );
   }
 
   private failPendingRequests(error: Error): void {
@@ -779,23 +791,34 @@ export class NativeHostTransportError extends Error {
 export class NativeHostCommandError extends Error {
   readonly code?: string;
   readonly details?: Record<string, unknown>;
+  readonly guidance?: Record<string, unknown>;
 
-  constructor(message: string, code?: string, details?: Record<string, unknown>) {
-    super(formatNativeHostCommandError(message, code, details));
+  constructor(
+    message: string,
+    code?: string,
+    details?: Record<string, unknown>,
+    guidance?: Record<string, unknown>
+  ) {
+    super(formatNativeHostCommandError(message, code, details, guidance));
     this.name = "NativeHostCommandError";
     this.code = code;
     this.details = details;
+    this.guidance = guidance;
   }
 }
 
 function formatNativeHostCommandError(
   message: string,
   code?: string,
-  details?: Record<string, unknown>
+  details?: Record<string, unknown>,
+  guidance?: Record<string, unknown>
 ): string {
   const parts = [code ? `[${code}] ${message}` : message];
   if (details && Object.keys(details).length > 0) {
     parts.push(`details: ${JSON.stringify(details)}`);
+  }
+  if (guidance && Object.keys(guidance).length > 0) {
+    parts.push(`guidance: ${JSON.stringify(guidance)}`);
   }
   return parts.join("\n");
 }

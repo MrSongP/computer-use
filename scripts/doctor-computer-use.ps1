@@ -10,6 +10,38 @@ Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot "_computer-use-plugin-common.ps1")
 
+function Get-ClaudeUserSettingsPath {
+  return Join-Path $HOME ".claude\settings.json"
+}
+
+function Assert-ClaudeUserPermissionRule {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$SettingsPath,
+    [Parameter(Mandatory = $true)]
+    [string]$Rule
+  )
+
+  if (-not (Test-Path -LiteralPath $SettingsPath)) {
+    throw "Claude project settings file is missing: $SettingsPath"
+  }
+
+  try {
+    $settings = Get-Content -LiteralPath $SettingsPath -Raw | ConvertFrom-Json
+  } catch {
+    throw "Failed to parse Claude project settings JSON at $SettingsPath. $($_.Exception.Message)"
+  }
+
+  $allowRules = @()
+  if ($null -ne $settings.permissions -and $null -ne $settings.permissions.allow) {
+    $allowRules = @($settings.permissions.allow | ForEach-Object { [string]$_ })
+  }
+
+  if ($allowRules -notcontains $Rule) {
+    throw "Claude user settings do not allow $Rule. Re-run scripts\install-claude-code.ps1 or add the same allow rule to $SettingsPath."
+  }
+}
+
 Write-Step "Checking built runtime entrypoint"
 if (-not (Test-ComputerUseBuildArtifacts)) {
   throw "Built MCP entrypoint is missing. Run npm run build in G:\Desktop\computer_use\computer_use first."
@@ -19,6 +51,11 @@ Invoke-ComputerUseSmoke
 
 if ($Target -in @("Both", "Claude")) {
   Invoke-ComputerUseClaudeValidation
+
+  Write-Step "Checking Claude user permission allowlist"
+  Assert-ClaudeUserPermissionRule `
+    -SettingsPath (Get-ClaudeUserSettingsPath) `
+    -Rule "mcp__plugin_computer-use_computer-use"
 
   Write-Step "Checking Claude marketplace registration"
   $claudeMarketplaces = Get-CheckedOutput -Executable "claude" -Arguments @("plugin", "marketplace", "list")

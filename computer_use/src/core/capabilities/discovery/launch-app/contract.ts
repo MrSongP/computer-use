@@ -1,4 +1,4 @@
-import type { LaunchAppParams } from "../../../../core/contracts/discovery.js";
+import type { LaunchAppMode, LaunchAppParams } from "../../../../core/contracts/discovery.js";
 import {
   ensureNoUnknownKeys,
   ensureNonEmptyString,
@@ -8,16 +8,30 @@ import type { CapabilityDefinition } from "../../../../core/runtime/capability-r
 
 export const launchAppCapability: CapabilityDefinition = {
   method: "launch_app",
-  summary: "Launch an installed app id or executable-path app identifier.",
+  summary: "Launch an app, or reject duplicate cold-launches with taskbar/tray recovery guidance.",
   requiresWindowActivation: false
 };
 
 export function validateLaunchAppParams(params: LaunchAppParams): LaunchAppParams {
   const candidate = ensureObject(params, "launch_app params are required");
-  ensureNoUnknownKeys(candidate, ["app"], "launch_app");
+  ensureNoUnknownKeys(candidate, ["app", "launch_mode"], "launch_app");
   const app = ensureNonEmptyString(candidate.app, "launch_app requires a non-empty app identifier");
+  const launchMode = validateLaunchAppMode(candidate.launch_mode);
 
   return {
-    app
+    app,
+    ...(launchMode ? { launch_mode: launchMode } : {})
   };
+}
+
+function validateLaunchAppMode(value: unknown): LaunchAppMode | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === "reuse_or_launch" || value === "force_new") {
+    return value;
+  }
+
+  throw new Error("launch_app launch_mode must be reuse_or_launch or force_new when provided");
 }

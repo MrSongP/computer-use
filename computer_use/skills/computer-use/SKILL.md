@@ -48,11 +48,12 @@ If the local tools are not exposed:
 
 Some Windows apps, especially WeChat / `Weixin.exe`, may already be running from the taskbar or system tray while exposing no immediately targetable app window.
 
-- If the user says the app is already open in the taskbar, notification area, or hidden tray menu, treat that as a reuse-first instruction. Do not cold-launch the app first.
-- If `list_apps` reports the app with `isRunning: true` but `windows: []`, or if the user explicitly says the app is already open but minimized to the tray, first restore that existing session from the bottom taskbar / notification area instead of calling `launch_app`.
-- Look for the app icon in the visible taskbar area first. If it is not visible, open the hidden-icons chevron in the system tray, then click the app icon there to bring the existing session back.
+- `launch_app` is policy-checked by default. Call it with the `list_apps` app id or executable path after discovery; the launch hook decides whether a cold launch is allowed.
+- If the runtime detects that the app is already running, `launch_app` refuses the duplicate cold launch and returns guidance telling you to restore the existing session from the Windows shell instead of starting another instance.
+- The Windows shell target is exposed through `list_apps` as `windows.shell.taskbar` with display name `Windows Taskbar`. Use that target with `get_window_state` and `click` when the hook tells you to inspect the taskbar or notification area.
+- Use `launch_mode: "force_new"` only when the user explicitly asks for a new instance. Do not set `force_new` just because the app is already running.
 - For WeChat specifically, treat consumer WeChat (`Weixin.exe`, display name `微信`) and enterprise WeChat / WXWork (`WXWork.exe`, `企业微信`) as different apps. Do not restore or send through the wrong one just because another Tencent app is already visible.
-- Only fall back to `launch_app` after the taskbar / tray restore path has failed or after you have confirmed there is no existing session to reuse.
+- If `launch_app` returns `tray_restore_required`, stop retrying launch. Switch to `windows.shell.taskbar`, capture the taskbar, and click the matching app icon there.
 
 ## Troubleshooting
 
@@ -63,7 +64,7 @@ IMPORTANT: do not control Windows apps through unrelated mechanisms before attem
 - If the same lightweight call times out again, do not keep issuing app input. Start a fresh thread or restart the plugin runtime, then retry `list_apps` once. If it still times out or reports helper communication failure, stop and report that the local Windows Computer Use runtime may have crashed.
 - If an RPC error includes an `approvalRequest`, preserve and surface that request. Do not hide approval context behind a generic failure.
 - If the intended app is present but has no suitable open window, call `launch_app` with the app id returned by `list_apps`, then poll `list_apps` until that app exposes a targetable window. If the intended app is not yet discoverable, call `launch_app` with an explicit `.exe` path or executable identifier, then poll `list_apps` or `list_windows` for the new targetable window. Do not open or navigate the Windows Start menu/Search UI to launch apps. Do not continue while a launcher, splash screen, modal, or permission prompt is blocking the app's workspace.
-- Exception for tray-resident apps such as WeChat: if the app is already running but hidden in the taskbar / tray, restore that existing session first. Do not use `launch_app` as the first move in that case.
+- If `launch_app` returns `tray_restore_required`, switch to the `windows.shell.taskbar` app target and restore the existing session by capturing and clicking the taskbar or hidden-tray icon yourself.
 
 ## Runtime Behavior
 
@@ -95,13 +96,13 @@ For an active workflow, bring the selected window forward and capture the first 
 { "method": "get_window_state", "params": { "window": { "id": 123456, "app": "example.exe" }, "include_screenshot": true, "include_text": true } }
 ```
 
-GOOD: if the chosen app is installed but has no returned window yet, launch it by id and poll `list_apps` for its window:
+GOOD: if the chosen app is installed but has no returned window yet, call `launch_app` by id and let the runtime reuse-or-launch the session, then poll `list_apps` for its window:
 
 ```json
 { "method": "launch_app", "params": { "app": "example-app-id" } }
 ```
 
-GOOD: if the app is a local `.exe` build and is not returned by `list_apps` yet, launch it by `.exe` path and poll for the resulting window:
+GOOD: if the app is a local `.exe` build and is not returned by `list_apps` yet, call `launch_app` by `.exe` path and poll for the resulting window:
 
 ```json
 { "method": "launch_app", "params": { "app": "C:\\work\\MyApp\\bin\\Debug\\MyApp.exe" } }
@@ -150,14 +151,16 @@ GOOD: for canvas/hotkey apps, focus the work surface, clear modal state, then ba
 ## Guidelines
 
 - Launch apps with `launch_app({ app: targetApp.id })` when `list_apps` returns the intended app. If the app is not yet discoverable in `list_apps`, use an explicit `.exe` path or executable identifier instead.
+- Treat `launch_app` as policy-checked unless the user explicitly asks for a fresh instance. In that explicit case, pass `launch_mode: "force_new"`.
+- Treat `windows.shell.taskbar` as the official shell target for taskbar/tray inspection and clicking after a launch hook rejection.
 - Start automating Windows apps by finding the app with `list_apps`, then selecting one of its open windows.
 - `get_window_state` does not need to activate the window, so it can be used to inspect multiple windows without stealing focus. Input methods activate their target window first and fail if activation fails. Use `activate_window` only when you explicitly need to bring a window foreground without taking an input action.
 - Use `list_apps` for default app discovery, app identity, launch candidates, running state, usage metadata, and each app's open windows. Prefer the returned `list_apps` id as the app identifier whenever a suitable candidate is available, even if the app is not currently running.
-- If `list_apps` shows an app as running but with no visible windows, treat it as a tray / hidden-session candidate before treating it as closed.
+- If `list_apps` shows an app as running but with no visible windows, treat it as a tray / hidden-session candidate. Call `launch_app` once, and if the hook rejects with `tray_restore_required`, move to the taskbar shell target instead of retrying the launch.
 - Use `list_windows` only when the task is explicitly about currently open windows or when you already know the target app is running and need a fresh flat window list.
 - Occluded windows can be snapshotted without activation. Minimized windows may be listed, but Windows.Graphics.Capture does not capture them reliably while minimized. Input methods activate and restore their target automatically. If a passive snapshot fails after starting from a minimized window, call `activate_window`, refresh the object with `get_window({ id, app })`, and retry once.
 - If the intended app is present but has no suitable open window, call `launch_app({ app: targetApp.id })`, then poll `list_apps` until the app exposes a targetable window. If the app is not yet in `list_apps`, launch it with an explicit `.exe` path or executable identifier, then poll `list_apps` or `list_windows` for the resulting targetable window. If the window never appears, report the exact launch or polling failure. Do not open or navigate the Windows Start menu/Search UI to launch apps, and do not use PowerShell or `Start-Process` as the normal app launch path.
-- For tray-resident apps, prefer restoring the existing taskbar / hidden-tray icon session before using `launch_app`. For WeChat, check the visible taskbar first, then the hidden-icons menu, and only cold-launch after the existing tray session cannot be restored.
+- For tray-resident apps, use the launch hook as the decision point. When it rejects with `tray_restore_required`, inspect `windows.shell.taskbar` and click the existing app icon there instead of trying to force a duplicate launch.
 - `get_window_state` is an expensive point-in-time snapshot, not a live view. Use it to reason over, then batch related actions without re-snapshotting between every input.
 - After `get_window_state`, use the returned `state.window` for later actions; it is the canonical window object that was actually captured.
 - After a stale handle or lost window binding, recover a current window object with `get_window({ id, app })` using an id and app from an earlier returned `WindowRef`.
@@ -365,6 +368,7 @@ type GetWindowInput = {
 
 type LaunchAppInput = {
   app: AppIdentifier;
+  launch_mode?: "reuse_or_launch" | "force_new";
 };
 
 type GetWindowStateInput = {

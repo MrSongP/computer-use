@@ -12,8 +12,11 @@ export interface GetWindowParams {
 
 export interface ListAppsParams {}
 
+export type LaunchAppMode = "reuse_or_launch" | "force_new";
+
 export interface LaunchAppParams {
   app: AppIdentifier;
+  launch_mode?: LaunchAppMode;
 }
 
 export interface DiscoveryRequestMap {

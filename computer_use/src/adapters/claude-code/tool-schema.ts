@@ -205,11 +205,16 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
     case "launch_app":
       return {
         type: "object",
-        description: "Launch an installed app id or an executable-path identifier.",
+        description: "Launch an installed app id or executable-path identifier, while rejecting duplicate cold-launches with taskbar/tray recovery guidance.",
         properties: {
           app: {
             type: "string",
             description: "Installed app id, executable name, or executable path."
+          },
+          launch_mode: {
+            type: "string",
+            enum: ["reuse_or_launch", "force_new"],
+            description: "Defaults to reuse_or_launch. Use force_new only when the user explicitly asks for a new instance."
           }
         },
         required: ["app"],

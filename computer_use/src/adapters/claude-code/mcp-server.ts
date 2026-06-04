@@ -185,7 +185,9 @@ export class ClaudeMcpStdioServer {
         return toolError({
           error: error.message,
           code: error.code,
-          approvalRequest: error.approvalRequest
+          approvalRequest: error.approvalRequest,
+          details: error.details,
+          guidance: error.guidance
         });
       }
 

@@ -9,7 +9,7 @@
 | `list_apps` | `done` | `src/core/capabilities/discovery/list-apps` + `src/windows/discovery/window-discovery-service.ts` | `tests/unit/window-discovery-service.test.ts`、`tests/integration/claude-code-adapter.test.ts` |
 | `list_windows` | `done` | `src/core/capabilities/discovery/list-windows` + `src/windows/discovery/window-discovery-service.ts` | `tests/unit/window-discovery-service.test.ts`、`tests/integration/codex-adapter.test.ts` |
 | `get_window` | `done` | `src/core/capabilities/discovery/get-window` + `src/windows/discovery/window-discovery-service.ts` | `tests/unit/get-window-contract.test.ts`、adapter/integration tests |
-| `launch_app` | `done` | `src/core/capabilities/discovery/launch-app` + `src/windows/launch/app-launch-service.ts` | `tests/unit/app-launch-service.test.ts` |
+| `launch_app` | `done` | `src/core/capabilities/discovery/launch-app` + `src/core/hooks/launch-app` + `src/windows/launch/app-launch-service.ts` | `tests/unit/app-launch-service.test.ts`（覆盖 hook rejection / taskbar guidance / `force_new`） |
 | `get_window_state` | `done` | `src/core/capabilities/capture/get-window-state` + `src/windows/capture/window-state-service.ts` | `tests/unit/window-state-service.test.ts`、`tests/integration/native-host-p5-smoke.test.ts` |
 | `click` | `done` | `src/core/capabilities/actions/click` + `src/windows/input/pointer-input-service.ts` | `tests/unit/pointer-input-service.test.ts`、`tests/integration/action-lane.test.ts` |
 | `click_element` | `done` | `src/core/capabilities/actions/click-element` + `src/windows/uia/element-interaction-service.ts` | `tests/unit/element-interaction-service.test.ts`、`tests/integration/native-host-p5-smoke.test.ts` |

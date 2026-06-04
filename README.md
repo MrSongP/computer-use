@@ -9,6 +9,8 @@
 ## 能力
 
 - `list_apps`、`list_windows`、`get_window`、`launch_app`
+- `launch_app` 默认会拦截重复冷启动：如果发现已有实例，就通过 hook 拒绝这次启动，并返回去任务栏/托盘恢复现有会话的指引；只有显式要求时才 `force_new`
+- `list_apps` 里会额外暴露 `windows.shell.taskbar`，供模型截图和点击任务栏/通知区域
 - `get_window_state`，包含截图和结构化 UIA 节点树
 - `click`、`click_element`、`press_key`、`type_text`、`scroll`、`set_value`、`drag`、`perform_secondary_action`、`activate_window`
 - `end_turn`、turn lifecycle、interrupt 和 trace evidence
@@ -32,6 +34,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
 5. `claude plugin install computer-use@computer-use-local --scope user`
 
 安装完成后，在当前 Claude Code 会话里执行 `/reload-plugins`，或者直接开一个新会话。
+
+安装脚本还会自动把 `mcp__plugin_computer-use_computer-use` 合并写入用户级 `~/.claude/settings.json`，这样 Claude Code 会把整个 `computer-use` MCP server 视为已允许，避免 `launch_app`、`click`、`type_text` 这类调用每一步都弹 `Yes`。这是用户级配置，所以不依赖你从哪个目录启动 Claude Code。
 
 Claude Code 的 marketplace manifest 在 [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json)，它会把 [`./computer_use`](./computer_use/) 作为真实插件目录安装。
 
@@ -104,6 +108,8 @@ This repository is not a thin wrapper around the official OpenAI `computer-use` 
 ## Capabilities
 
 - `list_apps`, `list_windows`, `get_window`, `launch_app`
+- `launch_app` blocks duplicate cold-launches by default: if an existing session is detected, the hook rejects the launch and returns guidance to restore the app from the taskbar or tray; only an explicit `force_new` bypasses that behavior
+- `list_apps` also exposes `windows.shell.taskbar` so the model has an official shell target for taskbar and notification-area inspection/clicking
 - `get_window_state` with screenshots and a structured UIA node tree
 - `click`, `click_element`, `press_key`, `type_text`, `scroll`, `set_value`, `drag`, `perform_secondary_action`, `activate_window`
 - `end_turn`, turn lifecycle, interrupts, and trace evidence
@@ -121,6 +127,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
 It builds the runtime, validates the Claude marketplace and plugin manifests, runs an MCP smoke test, registers the local marketplace, and installs `computer-use@computer-use-local`.
 
 After the installer finishes, run `/reload-plugins` in the current Claude Code session or start a new session.
+
+The installer also merges `mcp__plugin_computer-use_computer-use` into your user-level `~/.claude/settings.json`, so Claude Code treats the entire `computer-use` MCP server as allowed and can call `launch_app`, `click`, `type_text`, and related tools without a per-step approval prompt. Because this is a user-level setting, it does not depend on which working directory you launch Claude Code from.
 
 The Claude Code marketplace manifest lives at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) and points at the real plugin root under [`./computer_use`](./computer_use/).
 

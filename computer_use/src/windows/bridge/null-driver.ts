@@ -8,9 +8,10 @@ import type {
   SetValueParams
 } from "../../core/contracts/action.js";
 import type { WindowRef } from "../../core/contracts/window.js";
+import { createTaskbarApp, createTaskbarWindow, isTaskbarAppId } from "../../core/hooks/shell/taskbar-target.js";
 import { resolveVirtualScreenMetrics, type VirtualScreenMetrics } from "../input/pointer-primitives.js";
 import type { KeyboardInput, PointerClick, PointerDrag, PointerScroll } from "../shared/win32-types.js";
-import type { NativeBridge } from "./native-bridge.js";
+import type { NativeAppLaunchOptions, NativeBridge } from "./native-bridge.js";
 
 export interface RecordedInvocation {
   name: string;
@@ -83,6 +84,12 @@ export class NullNativeBridge implements NativeBridge {
   }
 
   async getWindow(params: GetWindowParams): Promise<WindowRef> {
+    if (isTaskbarAppId(params.app)) {
+      const taskbarWindow = createTaskbarWindow(params.id);
+      this.invocations.push({ name: "getWindow", payload: params });
+      return taskbarWindow;
+    }
+
     const window = {
       id: params.id,
       app: params.app ?? "demo.exe",
@@ -101,14 +108,15 @@ export class NullNativeBridge implements NativeBridge {
         isRunning: true,
         activationModel: "executable_path",
         windows: [{ id: 101, app: "demo.exe", title: "Demo Window" }]
-      }
+      },
+      createTaskbarApp(501)
     ];
     this.invocations.push({ name: "listApps", payload: apps });
     return apps;
   }
 
-  async launchApp(app: AppIdentifier): Promise<void> {
-    this.invocations.push({ name: "launchApp", payload: { app } });
+  async launchApp(app: AppIdentifier, options?: NativeAppLaunchOptions): Promise<void> {
+    this.invocations.push({ name: "launchApp", payload: { app, options: options ?? null } });
   }
 
   async getWindowState(params: WindowStateParams): Promise<WindowStateResult> {

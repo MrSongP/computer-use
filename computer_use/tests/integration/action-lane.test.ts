@@ -102,7 +102,7 @@ test("action lane exposes discovery and launch capabilities through the same run
   const launchAppResponse = await scaffold.dispatcher.dispatch({
     id: 8,
     method: "launch_app",
-    params: { app: "demo.exe" }
+    params: { app: "demo.exe", launch_mode: "force_new" }
   });
 
   assert.deepEqual(listWindowsResponse, {
@@ -127,6 +127,13 @@ test("action lane exposes discovery and launch capabilities through the same run
           isRunning: true,
           activationModel: "executable_path",
           windows: [{ id: 101, app: "demo.exe", title: "Demo Window" }]
+        },
+        {
+          id: "windows.shell.taskbar",
+          displayName: "Windows Taskbar",
+          isRunning: true,
+          activationModel: "executable_path",
+          windows: [{ id: 501, app: "windows.shell.taskbar", title: "Windows Taskbar" }]
         }
       ]
     }
@@ -136,7 +143,16 @@ test("action lane exposes discovery and launch capabilities through the same run
   const bridge = scaffold.runtime.nativeBridge as MockNativeBridge;
   assert.deepEqual(
     bridge.getRecordedInvocations().map((entry) => entry.name),
-    ["beginTurn", "listWindows", "beginTurn", "getWindow", "beginTurn", "listApps", "beginTurn", "launchApp"]
+    [
+      "beginTurn",
+      "listWindows",
+      "beginTurn",
+      "getWindow",
+      "beginTurn",
+      "listApps",
+      "beginTurn",
+      "launchApp"
+    ]
   );
 });
 

@@ -90,7 +90,7 @@ test("codex adapter drives the helper end-to-end and writes trace artifacts by s
     assert.equal(apps.apps[0]?.id, "demo.exe");
 
     assert.deepEqual(
-      await adapter.invoke("launch_app", { app: "demo.exe" }, { meta: turnTwoMeta }),
+      await adapter.invoke("launch_app", { app: "demo.exe", launch_mode: "force_new" }, { meta: turnTwoMeta }),
       null
     );
     assert.deepEqual(

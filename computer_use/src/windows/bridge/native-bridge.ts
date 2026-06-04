@@ -1,7 +1,7 @@
 import type { JsonRpcMeta } from "../../core/contracts/rpc.js";
 import type { AppDescriptor, AppIdentifier } from "../../core/contracts/app.js";
 import type { WindowStateParams, WindowStateResult } from "../../core/contracts/capture.js";
-import type { GetWindowParams } from "../../core/contracts/discovery.js";
+import type { GetWindowParams, LaunchAppMode } from "../../core/contracts/discovery.js";
 import type {
   ClickElementParams,
   PerformSecondaryActionParams,
@@ -33,6 +33,10 @@ export interface NativeBridgeCapabilities {
   };
 }
 
+export interface NativeAppLaunchOptions {
+  launchMode?: LaunchAppMode;
+}
+
 export interface NativeBridge {
   readonly driverName: string;
   readonly capabilities?: NativeBridgeCapabilities;
@@ -47,7 +51,7 @@ export interface NativeBridge {
   listWindows(): Promise<readonly WindowRef[]>;
   getWindow(params: GetWindowParams): Promise<WindowRef>;
   listApps(): Promise<readonly AppDescriptor[]>;
-  launchApp(app: AppIdentifier): Promise<void>;
+  launchApp(app: AppIdentifier, options?: NativeAppLaunchOptions): Promise<void>;
   getWindowState(params: WindowStateParams): Promise<WindowStateResult>;
   clickElement(params: ClickElementParams): Promise<void>;
   setValue(params: SetValueParams): Promise<void>;

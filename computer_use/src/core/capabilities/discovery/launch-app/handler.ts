@@ -24,7 +24,7 @@ export class LaunchAppHandler {
 
         this.context.endTurn.begin(request.meta);
         const service = new AppLaunchService(this.context.nativeBridge);
-        const plan = await service.launch(params.app);
+        const plan = await service.launch(params);
         await trace.writeJsonArtifact("launch", "launch-plan.json", plan);
 
         return {

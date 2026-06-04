@@ -16,7 +16,7 @@ import type {
 import type { WindowRef } from "../../core/contracts/window.js";
 import { resolveVirtualScreenMetrics, type VirtualScreenMetrics } from "../input/pointer-primitives.js";
 import type { KeyboardInput, PointerClick, PointerDrag, PointerScroll } from "../shared/win32-types.js";
-import type { NativeBridge } from "./native-bridge.js";
+import type { NativeAppLaunchOptions, NativeBridge } from "./native-bridge.js";
 
 const execFileAsync = promisify(execFile);
 let powerShellScriptPathPromise: Promise<string> | undefined;
@@ -405,7 +405,7 @@ export class PowerShellNativeBridge implements NativeBridge {
     throw new Error("PowerShell native bridge does not implement list_apps.");
   }
 
-  async launchApp(_app: AppIdentifier): Promise<void> {
+  async launchApp(_app: AppIdentifier, _options?: NativeAppLaunchOptions): Promise<void> {
     throw new Error("PowerShell native bridge does not implement launch_app.");
   }
 

@@ -68,6 +68,13 @@ test("stdio runtime handles discovery requests over line-delimited JSON-RPC", as
           isRunning: true,
           activationModel: "executable_path",
           windows: [{ id: 101, app: "demo.exe", title: "Demo Window" }]
+        },
+        {
+          id: "windows.shell.taskbar",
+          displayName: "Windows Taskbar",
+          isRunning: true,
+          activationModel: "executable_path",
+          windows: [{ id: 501, app: "windows.shell.taskbar", title: "Windows Taskbar" }]
         }
       ]
     }

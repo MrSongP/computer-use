@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { access, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
@@ -15,7 +15,6 @@ const FRAMEWORK64_DIR = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319";
 const FRAMEWORK64_WPF_PATH = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\WPF";
 const WINDOWS_WINMD_PATH = "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata\\10.0.26100.0\\Windows.winmd";
 const nativeHostSourcePath = path.resolve("native-host/ComputerUse.NativeHost/Program.cs");
-const nativeHostExePath = path.resolve("native-host/ComputerUse.NativeHost/bin/Release/ComputerUse.NativeHost.exe");
 const smokeAppSourcePath = path.resolve("tests/fixtures/ComputerUse.P5SmokeApp.cs");
 
 test("native host closes the P5 exit with real WGC and UIA smoke coverage", async (t) => {
@@ -31,12 +30,13 @@ test("native host closes the P5 exit with real WGC and UIA smoke coverage", asyn
   }
 
   const sandboxDir = await mkdtemp(path.join(tmpdir(), "computer-use-p5-smoke-"));
+  const nativeHostExePath = path.join(sandboxDir, "ComputerUse.NativeHost.exe");
   const smokeAppExePath = path.join(sandboxDir, "ComputerUse.P5SmokeApp.exe");
   const smokeInfoPath = path.join(sandboxDir, "smoke-app.info");
   let smokeAppProcess: ChildProcessWithoutNullStreams | undefined;
 
   try {
-    await ensureNativeHostExecutable(cscPath);
+    await compileNativeHostExecutable(cscPath, nativeHostExePath);
     await compileSmokeApp(cscPath, smokeAppExePath);
 
     smokeAppProcess = spawn(smokeAppExePath, [], {
@@ -257,24 +257,13 @@ class NativeHostClient {
   }
 }
 
-async function ensureNativeHostExecutable(cscPath: string): Promise<void> {
-  const nativeHostSourceStat = await stat(nativeHostSourcePath);
-
-  try {
-    const nativeHostExeStat = await stat(nativeHostExePath);
-    if (nativeHostExeStat.mtimeMs >= nativeHostSourceStat.mtimeMs) {
-      return;
-    }
-  } catch {
-    // compile below
-  }
-
+async function compileNativeHostExecutable(cscPath: string, outputPath: string): Promise<void> {
   await execFileAsync(
     cscPath,
     [
       "/nologo",
       "/target:exe",
-      `/out:${nativeHostExePath}`,
+      `/out:${outputPath}`,
       "/r:System.Web.Extensions.dll",
       "/r:System.Drawing.dll",
       `/r:${path.join(FRAMEWORK64_DIR, "System.Runtime.dll")}`,

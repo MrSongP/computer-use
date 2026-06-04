@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import type {
   ApprovalRequest,
   JsonRpcId,
+  JsonRpcErrorResponse,
   JsonRpcRequest,
   JsonRpcResponse
 } from "../contracts/rpc.js";
@@ -152,6 +153,8 @@ function normalizeRuntimeError(id: JsonRpcId, error: unknown): JsonRpcResponse<n
       message?: unknown;
       code?: unknown;
       approvalRequest?: unknown;
+      details?: unknown;
+      guidance?: unknown;
     };
 
     if (candidate.code === "interrupted") {
@@ -163,7 +166,7 @@ function normalizeRuntimeError(id: JsonRpcId, error: unknown): JsonRpcResponse<n
       };
     }
 
-    return {
+    const response: JsonRpcErrorResponse = {
       id,
       ok: false,
       error:
@@ -175,6 +178,16 @@ function normalizeRuntimeError(id: JsonRpcId, error: unknown): JsonRpcResponse<n
         ? candidate.approvalRequest
         : undefined
     };
+
+    if (isRecord(candidate.details)) {
+      response.details = candidate.details;
+    }
+
+    if (isToolGuidance(candidate.guidance)) {
+      response.guidance = candidate.guidance;
+    }
+
+    return response;
   }
 
   return {
@@ -195,4 +208,32 @@ function isApprovalRequest(value: unknown): value is ApprovalRequest {
     typeof candidate.displayName === "string" &&
     (candidate.riskLevel === "low" || candidate.riskLevel === "high")
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isToolGuidance(value: unknown): value is NonNullable<JsonRpcErrorResponse["guidance"]> {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if ("should_retry" in value && typeof value.should_retry !== "boolean") {
+    return false;
+  }
+  if ("user_visible_message" in value && typeof value.user_visible_message !== "string") {
+    return false;
+  }
+  if ("model_action" in value && typeof value.model_action !== "string") {
+    return false;
+  }
+  if ("suggested_tool_call" in value) {
+    const toolCall = value.suggested_tool_call;
+    if (!isRecord(toolCall) || typeof toolCall.method !== "string" || !isRecord(toolCall.params)) {
+      return false;
+    }
+  }
+
+  return true;
 }

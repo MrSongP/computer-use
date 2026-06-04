@@ -65,7 +65,10 @@ namespace ComputerUse.NativeHost
                     }
                     catch (NativeHostException error)
                     {
-                        WriteResponse(serializer, ResponseEnvelope.Failure(requestId, error.Message, error.Code, error.Details));
+                        WriteResponse(
+                            serializer,
+                            ResponseEnvelope.Failure(requestId, error.Message, error.Code, error.Details, error.Guidance)
+                        );
                     }
                     catch (Exception error)
                     {
@@ -75,7 +78,8 @@ namespace ComputerUse.NativeHost
                                 requestId,
                                 error.Message,
                                 "INTERNAL_ERROR",
-                                CreateDetails("type", error.GetType().FullName)
+                                CreateDetails("type", error.GetType().FullName),
+                                null
                             )
                         );
                     }
@@ -166,6 +170,9 @@ namespace ComputerUse.NativeHost
         private static readonly IntPtr DpiAwarenessContextPerMonitorAware = new IntPtr(-3);
         private static readonly Guid GraphicsCaptureItemGuid = new Guid("79C3F95B-31F7-4EC2-A464-632EF5D30760");
         private static readonly Guid DxgiDeviceGuid = new Guid("54EC77FA-1377-44E6-8C32-88FD5F44C84C");
+        private const string TaskbarAppId = "windows.shell.taskbar";
+        private const string TaskbarDisplayName = "Windows Taskbar";
+        private const string TaskbarWindowTitle = "Windows Taskbar";
         private static readonly string[] HiddenClassNames =
         {
             "Progman",
@@ -216,7 +223,7 @@ namespace ComputerUse.NativeHost
                 case "listApps":
                     return ListApps();
                 case "launchApp":
-                    LaunchApp(ReadRequiredString(payload, "app"));
+                    LaunchApp(ReadRequiredString(payload, "app"), ReadOptionalString(payload, "launchMode"));
                     return null;
                 case "getWindowState":
                     return GetWindowState(ReadRequiredDictionary(payload, "params"));
@@ -725,6 +732,12 @@ namespace ComputerUse.NativeHost
             }
 
             var result = new List<Dictionary<string, object>>(merged.Values);
+            var taskbarWindow = FindTaskbarWindow();
+            if (taskbarWindow != IntPtr.Zero)
+            {
+                result.Add(BuildTaskbarAppPayload(taskbarWindow));
+            }
+
             result.Sort(delegate(Dictionary<string, object> left, Dictionary<string, object> right)
             {
                 return string.Compare(
@@ -740,7 +753,40 @@ namespace ComputerUse.NativeHost
             };
         }
 
-        private void LaunchApp(string app)
+        private static IntPtr FindTaskbarWindow()
+        {
+            return FindWindow("Shell_TrayWnd", null);
+        }
+
+        private Dictionary<string, object> BuildTaskbarAppPayload(IntPtr hwnd)
+        {
+            var payload = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            payload["id"] = TaskbarAppId;
+            payload["displayName"] = TaskbarDisplayName;
+            payload["isRunning"] = true;
+            payload["activationModel"] = "executable_path";
+            payload["windows"] = new List<Dictionary<string, object>>
+            {
+                BuildTaskbarWindowPayload(hwnd)
+            };
+            return payload;
+        }
+
+        private Dictionary<string, object> BuildTaskbarWindowPayload(IntPtr hwnd)
+        {
+            var payload = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            payload["id"] = hwnd.ToInt64();
+            payload["app"] = TaskbarAppId;
+            payload["title"] = TaskbarWindowTitle;
+            return payload;
+        }
+
+        private static bool IsTaskbarRequested(string requestedApp)
+        {
+            return string.Equals(requestedApp, TaskbarAppId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void LaunchApp(string app, string launchMode)
         {
             EnsureTurnInitialized();
             ThrowIfInterrupted();
@@ -756,17 +802,15 @@ namespace ComputerUse.NativeHost
                 throw NativeHostException.Interrupted("launch_app does not support pid app identifiers");
             }
 
+            var normalizedLaunchMode = NormalizeLaunchMode(launchMode);
+            var launchTarget = ResolveLaunchTargetDescriptor(normalized);
+            if (normalizedLaunchMode != "force_new" && IsExistingSessionRunning(normalized, launchTarget))
+            {
+                throw CreateTrayRestoreRequiredException(normalized, launchTarget);
+            }
+
             if (LooksLikeExecutablePath(normalized))
             {
-                if (HasRunningExecutableProcess(normalized))
-                {
-                    throw NativeHostException.NativeExecution(
-                        "launchApp",
-                        "The app is already running without a visible top-level window. Restore the existing session from the taskbar or system tray instead of cold-launching it.",
-                        CreateDetails("app", normalized)
-                    );
-                }
-
                 LaunchProcess(normalized, null, Path.GetDirectoryName(normalized));
                 return;
             }
@@ -774,6 +818,107 @@ namespace ComputerUse.NativeHost
             var explorerPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
             var shellTarget = "shell:AppsFolder\\" + normalized;
             LaunchProcess(explorerPath, "\"" + shellTarget + "\"", null);
+        }
+
+        private static string NormalizeLaunchMode(string launchMode)
+        {
+            if (string.IsNullOrWhiteSpace(launchMode))
+            {
+                return "reuse_or_launch";
+            }
+
+            var normalized = launchMode.Trim();
+            if (string.Equals(normalized, "reuse_or_launch", StringComparison.OrdinalIgnoreCase))
+            {
+                return "reuse_or_launch";
+            }
+
+            if (string.Equals(normalized, "force_new", StringComparison.OrdinalIgnoreCase))
+            {
+                return "force_new";
+            }
+
+            throw NativeHostException.InvalidRequest("launch_app launchMode must be reuse_or_launch or force_new when provided.");
+        }
+
+        private AppDescriptorDto ResolveLaunchTargetDescriptor(string app)
+        {
+            if (LooksLikeExecutablePath(app))
+            {
+                return new AppDescriptorDto
+                {
+                    Id = app,
+                    DisplayName = Path.GetFileNameWithoutExtension(app),
+                    ExecutablePath = app,
+                    ActivationModel = "executable_path"
+                };
+            }
+
+            foreach (var candidate in EnumerateShellApps())
+            {
+                if (string.Equals(candidate.Id, app, StringComparison.OrdinalIgnoreCase))
+                {
+                    return candidate;
+                }
+
+                if (!string.IsNullOrWhiteSpace(candidate.ExecutablePath) &&
+                    string.Equals(candidate.ExecutablePath, app, StringComparison.OrdinalIgnoreCase))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private bool IsExistingSessionRunning(string requestedApp, AppDescriptorDto launchTarget)
+        {
+            var executablePath = launchTarget != null && !string.IsNullOrWhiteSpace(launchTarget.ExecutablePath)
+                ? launchTarget.ExecutablePath
+                : (LooksLikeExecutablePath(requestedApp) ? requestedApp : null);
+            if (string.IsNullOrWhiteSpace(executablePath) || !HasRunningExecutableProcess(executablePath))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private NativeHostException CreateTrayRestoreRequiredException(string requestedApp, AppDescriptorDto launchTarget)
+        {
+            var details = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            details["app"] = requestedApp;
+            if (launchTarget != null)
+            {
+                details["matchedAppId"] = launchTarget.Id;
+                if (!string.IsNullOrWhiteSpace(launchTarget.DisplayName))
+                {
+                    details["matchedDisplayName"] = launchTarget.DisplayName;
+                }
+                if (!string.IsNullOrWhiteSpace(launchTarget.ExecutablePath))
+                {
+                    details["matchedExecutablePath"] = launchTarget.ExecutablePath;
+                }
+            }
+            details["taskbarAppId"] = TaskbarAppId;
+
+            var guidance = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            guidance["should_retry"] = true;
+            guidance["user_visible_message"] = "The app is already running. Do not cold-launch a second instance.";
+            guidance["model_action"] =
+                "Call list_apps, select the Windows Taskbar shell target, capture it with get_window_state, and click the matching taskbar or notification-area icon to restore the existing session instead of calling launch_app again.";
+            guidance["suggested_tool_call"] = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "method", "list_apps" },
+                { "params", new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) }
+            };
+
+            return NativeHostException.PolicyViolation(
+                "tray_restore_required",
+                "launch_app refused to cold-launch a duplicate instance because the app is already running.",
+                details,
+                guidance
+            );
         }
 
         private object GetWindowState(IDictionary<string, object> payload)
@@ -970,6 +1115,11 @@ namespace ComputerUse.NativeHost
                 return null;
             }
 
+            if (IsTaskbarRequested(requestedApp))
+            {
+                return BuildTaskbarWindowPayload(hwnd);
+            }
+
             if (!IsWindowVisible(hwnd) || IsWindowCloaked(hwnd) || IsFilteredClassName(hwnd))
             {
                 return null;
@@ -982,14 +1132,16 @@ namespace ComputerUse.NativeHost
 
             uint processId;
             GetWindowThreadProcessId(hwnd, out processId);
-            if (processId == 0)
+            if (processId == 0 && !IsTaskbarRequested(requestedApp))
             {
                 return null;
             }
 
             var title = GetWindowTitle(hwnd);
             var processPath = GetProcessPath(processId);
-            var appId = string.IsNullOrWhiteSpace(processPath) ? requestedApp : processPath;
+            var appId = IsTaskbarRequested(requestedApp)
+                ? TaskbarAppId
+                : (string.IsNullOrWhiteSpace(processPath) ? requestedApp : processPath);
             if (string.IsNullOrWhiteSpace(appId))
             {
                 return null;
@@ -1022,7 +1174,9 @@ namespace ComputerUse.NativeHost
             uint processId;
             GetWindowThreadProcessId(hwnd, out processId);
             var processPath = processId == 0 ? null : GetProcessPath(processId);
-            var appId = string.IsNullOrWhiteSpace(processPath) ? requestedApp : processPath;
+            var appId = IsTaskbarRequested(requestedApp)
+                ? TaskbarAppId
+                : (string.IsNullOrWhiteSpace(processPath) ? requestedApp : processPath);
             if (string.IsNullOrWhiteSpace(appId))
             {
                 appId = "unknown";
@@ -1031,7 +1185,9 @@ namespace ComputerUse.NativeHost
             var payload = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             payload["id"] = hwnd.ToInt64();
             payload["app"] = appId;
-            payload["title"] = GetWindowTitle(hwnd) ?? string.Empty;
+            payload["title"] = IsTaskbarRequested(requestedApp)
+                ? TaskbarWindowTitle
+                : (GetWindowTitle(hwnd) ?? string.Empty);
             payload["rect"] = RectToPayload(rect);
             payload["visible"] = IsWindowVisible(hwnd) && !IsWindowCloaked(hwnd);
             payload["minimized"] = IsIconic(hwnd);
@@ -2558,6 +2714,9 @@ namespace ComputerUse.NativeHost
         private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr FindWindow(string className, string windowName);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern int GetWindowTextLengthW(IntPtr hWnd);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -2665,35 +2824,43 @@ namespace ComputerUse.NativeHost
             "Stop your work, do not call further Computer Use tools in this turn, " +
             "and send a final message noting that the user stopped Computer Use.";
 
-        private NativeHostException(string message, string code, Dictionary<string, object> details)
+        private NativeHostException(
+            string message,
+            string code,
+            Dictionary<string, object> details,
+            Dictionary<string, object> guidance
+        )
             : base(message)
         {
             Code = code;
             Details = details;
+            Guidance = guidance;
         }
 
         public string Code { get; private set; }
 
         public Dictionary<string, object> Details { get; private set; }
 
+        public Dictionary<string, object> Guidance { get; private set; }
+
         public static NativeHostException InvalidRequest(string message)
         {
-            return new NativeHostException(message, "INVALID_REQUEST", new Dictionary<string, object>());
+            return new NativeHostException(message, "INVALID_REQUEST", new Dictionary<string, object>(), null);
         }
 
         public static NativeHostException Lifecycle(string message)
         {
-            return new NativeHostException(message, "LIFECYCLE_ERROR", new Dictionary<string, object>());
+            return new NativeHostException(message, "LIFECYCLE_ERROR", new Dictionary<string, object>(), null);
         }
 
         public static NativeHostException Interrupted()
         {
-            return new NativeHostException(EscapeInterruptMessage, "interrupted", new Dictionary<string, object>());
+            return new NativeHostException(EscapeInterruptMessage, "interrupted", new Dictionary<string, object>(), null);
         }
 
         public static NativeHostException Interrupted(string message)
         {
-            return new NativeHostException(message, "INVALID_REQUEST", new Dictionary<string, object>());
+            return new NativeHostException(message, "INVALID_REQUEST", new Dictionary<string, object>(), null);
         }
 
         public static NativeHostException NativeExecution(
@@ -2708,7 +2875,17 @@ namespace ComputerUse.NativeHost
             }
 
             details["api"] = api;
-            return new NativeHostException(message, "NATIVE_EXECUTION_ERROR", details);
+            return new NativeHostException(message, "NATIVE_EXECUTION_ERROR", details, null);
+        }
+
+        public static NativeHostException PolicyViolation(
+            string code,
+            string message,
+            Dictionary<string, object> details,
+            Dictionary<string, object> guidance
+        )
+        {
+            return new NativeHostException(message, code, details ?? new Dictionary<string, object>(), guidance);
         }
 
         public static NativeHostException FromHResult(string api, int hresult, string message)
@@ -2733,6 +2910,8 @@ namespace ComputerUse.NativeHost
 
         public Dictionary<string, object> Details { get; private set; }
 
+        public Dictionary<string, object> Guidance { get; private set; }
+
         public static ResponseEnvelope Success(int id, object result)
         {
             return new ResponseEnvelope
@@ -2747,7 +2926,8 @@ namespace ComputerUse.NativeHost
             int id,
             string error,
             string code,
-            Dictionary<string, object> details
+            Dictionary<string, object> details,
+            Dictionary<string, object> guidance
         )
         {
             return new ResponseEnvelope
@@ -2756,7 +2936,8 @@ namespace ComputerUse.NativeHost
                 Ok = false,
                 Error = error,
                 Code = code,
-                Details = details
+                Details = details,
+                Guidance = guidance
             };
         }
 
@@ -2777,6 +2958,10 @@ namespace ComputerUse.NativeHost
                 if (Details != null && Details.Count > 0)
                 {
                     values["details"] = Details;
+                }
+                if (Guidance != null && Guidance.Count > 0)
+                {
+                    values["guidance"] = Guidance;
                 }
             }
 

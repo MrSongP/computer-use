@@ -28,6 +28,16 @@ export interface ApprovalRequest {
   riskLevel: "low" | "high";
 }
 
+export interface ToolGuidance {
+  should_retry?: boolean;
+  user_visible_message?: string;
+  model_action?: string;
+  suggested_tool_call?: {
+    method: string;
+    params: Record<string, unknown>;
+  };
+}
+
 export interface JsonRpcSuccessResponse<TResult = unknown> {
   id: JsonRpcId;
   ok: true;
@@ -40,6 +50,8 @@ export interface JsonRpcErrorResponse {
   error: string;
   code?: string;
   approvalRequest?: ApprovalRequest;
+  details?: Record<string, unknown>;
+  guidance?: ToolGuidance;
 }
 
 export type JsonRpcResponse<TResult = unknown> =

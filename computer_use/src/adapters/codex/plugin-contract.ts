@@ -34,6 +34,8 @@ export interface CodexPluginContract {
 export class CodexAdapterRpcError extends Error {
   readonly code: string | undefined;
   readonly approvalRequest: ApprovalRequest | undefined;
+  readonly details: JsonRpcErrorResponse["details"];
+  readonly guidance: JsonRpcErrorResponse["guidance"];
   readonly response: JsonRpcErrorResponse;
 
   constructor(response: JsonRpcErrorResponse) {
@@ -41,6 +43,8 @@ export class CodexAdapterRpcError extends Error {
     this.name = "CodexAdapterRpcError";
     this.code = response.code;
     this.approvalRequest = response.approvalRequest;
+    this.details = response.details;
+    this.guidance = response.guidance;
     this.response = response;
   }
 }
