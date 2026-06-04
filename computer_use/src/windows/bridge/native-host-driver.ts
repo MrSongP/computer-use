@@ -148,13 +148,14 @@ export class NativeHostBridge implements NativeBridge {
 
   endTurn(): void {
     const turnMeta = this.currentTurnMeta;
+    const shouldEndFallbackTurn = this.fallbackTurnStarted;
     this.currentTurnMeta = undefined;
+    this.fallbackTurnStarted = false;
 
     if (this.fallbackActive) {
-      if (this.fallbackTurnStarted) {
+      if (shouldEndFallbackTurn) {
         this.fallback.endTurn();
       }
-      this.fallbackTurnStarted = false;
       return;
     }
 
@@ -166,6 +167,9 @@ export class NativeHostBridge implements NativeBridge {
       } finally {
         this.turnStarted = false;
         this.disposeHostProcess();
+        if (shouldEndFallbackTurn) {
+          this.fallback.endTurn();
+        }
       }
     });
 
@@ -283,7 +287,7 @@ export class NativeHostBridge implements NativeBridge {
         throw normalized;
       }
 
-      await this.activateFallback();
+      await this.activateFallback(normalized);
       try {
         return await this.fallback.getWindowState(params);
       } catch (fallbackError) {
@@ -373,7 +377,7 @@ export class NativeHostBridge implements NativeBridge {
         throw normalized;
       }
 
-      await this.activateFallback();
+      await this.activateFallback(normalized);
       try {
         await fallback();
       } catch (fallbackError) {
@@ -398,7 +402,7 @@ export class NativeHostBridge implements NativeBridge {
         throw normalized;
       }
 
-      await this.activateFallback();
+      await this.activateFallback(normalized);
       try {
         return await fallback();
       } catch (fallbackError) {
@@ -407,8 +411,8 @@ export class NativeHostBridge implements NativeBridge {
     }
   }
 
-  private async activateFallback(): Promise<void> {
-    this.fallbackActive = true;
+  private async activateFallback(primaryError: Error): Promise<void> {
+    this.fallbackActive = shouldPersistFallback(primaryError);
     this.turnStarted = false;
     this.lifecycleError = undefined;
     this.disposeHostProcess();
@@ -940,6 +944,10 @@ function formatStderrSuffix(stderr: string): string {
 
 function shouldFallback(error: Error): boolean {
   return error instanceof NativeHostBuildError || error instanceof NativeHostTransportError;
+}
+
+function shouldPersistFallback(error: Error): boolean {
+  return error instanceof NativeHostBuildError;
 }
 
 function shouldRetryWindowStateWithoutText(

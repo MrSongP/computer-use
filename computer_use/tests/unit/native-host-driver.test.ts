@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   NativeHostBridge,
+  NativeHostBuildError,
   NativeHostTransportError
 } from "../../src/windows/bridge/native-host-driver.js";
 import { NullNativeBridge } from "../../src/windows/bridge/null-driver.js";
@@ -21,7 +22,81 @@ test("NativeHostBridge times out hung requests and falls back instead of hanging
 
   assert.deepEqual(windows, [{ id: 101, app: "demo.exe", title: "Demo Window" }]);
   assert.equal(fakeChild.killCalled, true);
+  assert.equal((bridge as any).fallbackActive, false);
+});
+
+test("NativeHostBridge retries native-host after a per-call transport fallback", async () => {
+  const fallback = new NullNativeBridge();
+  const bridge = new NativeHostBridge({
+    fallback,
+    requestTimeoutMs: 20
+  });
+  let primaryCalls = 0;
+
+  (bridge as any).invokePrimaryResult = async () => {
+    primaryCalls += 1;
+    if (primaryCalls === 1) {
+      throw new NativeHostTransportError(
+        "Timed out waiting 20ms for native host response to 'listWindows'."
+      );
+    }
+
+    return [{ id: 202, app: "native.exe", title: "Native Window" }];
+  };
+
+  assert.deepEqual(await bridge.listWindows(), [
+    { id: 101, app: "demo.exe", title: "Demo Window" }
+  ]);
+  assert.equal((bridge as any).fallbackActive, false);
+  assert.deepEqual(await bridge.listWindows(), [
+    { id: 202, app: "native.exe", title: "Native Window" }
+  ]);
+  assert.equal(primaryCalls, 2);
+});
+
+test("NativeHostBridge keeps fallback active after a native-host build failure", async () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge(),
+    requestTimeoutMs: 20
+  });
+  let primaryCalls = 0;
+
+  (bridge as any).invokePrimaryResult = async () => {
+    primaryCalls += 1;
+    throw new NativeHostBuildError("Failed to build the native host: dotnet missing");
+  };
+
+  assert.deepEqual(await bridge.listWindows(), [
+    { id: 101, app: "demo.exe", title: "Demo Window" }
+  ]);
   assert.equal((bridge as any).fallbackActive, true);
+  assert.deepEqual(await bridge.listWindows(), [
+    { id: 101, app: "demo.exe", title: "Demo Window" }
+  ]);
+  assert.equal(primaryCalls, 1);
+});
+
+test("NativeHostBridge closes a temporary fallback turn on endTurn", async () => {
+  const fallback = new NullNativeBridge();
+  const bridge = new NativeHostBridge({
+    fallback,
+    requestTimeoutMs: 20
+  });
+
+  (bridge as any).invokePrimaryResult = async () => {
+    throw new NativeHostTransportError(
+      "Timed out waiting 20ms for native host response to 'listWindows'."
+    );
+  };
+
+  await bridge.listWindows();
+  bridge.endTurn();
+  await waitFor(() => fallback.getRecordedInvocations().some((entry) => entry.name === "endTurn"));
+
+  assert.deepEqual(
+    fallback.getRecordedInvocations().map((entry) => entry.name),
+    ["beginTurn", "listWindows", "endTurn"]
+  );
 });
 
 test("NativeHostBridge reports the native-host timeout cause when fallback also fails", async () => {
