@@ -3,7 +3,6 @@ import {
   ensureFiniteNumber,
   ensureMouseButton,
   ensureNoUnknownKeys,
-  ensureNonNegativeInteger,
   ensureObject,
   ensureOptionalNonEmptyString,
   ensurePositiveInteger,
@@ -13,7 +12,7 @@ import type { CapabilityDefinition } from "../../../../core/runtime/capability-r
 
 export const clickCapability: CapabilityDefinition = {
   method: "click",
-  summary: "Coordinate-first click action routed through the Windows bridge seam.",
+  summary: "Click at window-relative coordinates.",
   requiresWindowActivation: true
 };
 
@@ -21,7 +20,7 @@ export function validateClickParams(params: ClickParams): ClickParams {
   const candidate = ensureObject(params, "click params are required");
   ensureNoUnknownKeys(
     candidate,
-    ["window", "x", "y", "click_count", "mouse_button", "element_index", "screenshotId"],
+    ["window", "x", "y", "click_count", "mouse_button", "screenshotId"],
     "click"
   );
   ensureWindowRef(candidate.window, "click");
@@ -36,13 +35,6 @@ export function validateClickParams(params: ClickParams): ClickParams {
     params.screenshotId,
     "click screenshotId must be a non-empty string when provided"
   );
-  if (params.element_index !== undefined) {
-    ensureNonNegativeInteger(
-      params.element_index,
-      "click element_index must be a non-negative integer when provided"
-    );
-    return params;
-  }
   ensureFiniteNumber(params.x, "click requires finite x and y coordinates");
   ensureFiniteNumber(params.y, "click requires finite x and y coordinates");
   return params;

@@ -13,11 +13,10 @@ export type ActionMethod =
 
 export interface ClickParams {
   window: WindowRef;
-  x?: number;
-  y?: number;
+  x: number;
+  y: number;
   click_count?: number;
   mouse_button?: "left" | "right" | "middle" | "l" | "r" | "m";
-  element_index?: number;
   screenshotId?: string;
 }
 

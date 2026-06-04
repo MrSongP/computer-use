@@ -143,10 +143,10 @@ test("PointerInputService activates the window before forwarding the normalized 
   assert.equal(execution.activation.strategy.maxForegroundRetries, 20);
   assert.equal(execution.activation.strategy.attachThreadInputMode, "unavailable");
   assert.deepEqual(execution.clickPlan.coordinates, {
-    pixelX: 10,
-    pixelY: 20,
-    absoluteX: 342,
-    absoluteY: 1215
+    pixelX: 110,
+    pixelY: 220,
+    absoluteX: 3757,
+    absoluteY: 13362
   });
   assert.equal(execution.clickPlan.reservedPrimitives.scroll.kind, "scroll");
   assert.equal(execution.clickPlan.reservedPrimitives.drag.kind, "drag");

@@ -44,11 +44,13 @@ export class PointerInputService {
   async click(params: ClickParams): Promise<PointerClickExecution> {
     const normalizedParams = normalizeClickParams(params);
     const activation = await this.activationService.activate(normalizedParams.window);
+    const pointerClick = toPointerClick(normalizedParams);
     const clickPlan = buildPointerClickPlan(
-      normalizedParams,
+      pointerClick.x,
+      pointerClick.y,
       await this.resolveVirtualScreen()
     );
-    await this.port.sendPointerClick(toPointerClick(normalizedParams));
+    await this.port.sendPointerClick(pointerClick);
     return {
       activation,
       clickPlan

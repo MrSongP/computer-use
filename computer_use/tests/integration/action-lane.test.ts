@@ -25,6 +25,24 @@ test("action lane dispatches click through the mock native bridge", async () => 
   );
 });
 
+test("action lane rejects element_index on click and keeps semantic clicks on click_element", async () => {
+  const scaffold = createScaffoldRuntime();
+
+  await assert.rejects(
+    scaffold.dispatcher.dispatch({
+      id: 15,
+      method: "click",
+      params: {
+        window: { id: 101, app: "demo.exe" },
+        x: 10,
+        y: 20,
+        element_index: 1
+      }
+    }),
+    /unsupported fields: element_index/
+  );
+});
+
 test("action lane dispatches press_key and type_text through the same runtime seam", async () => {
   const scaffold = createScaffoldRuntime();
 

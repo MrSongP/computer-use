@@ -1,5 +1,3 @@
-import type { ClickParams } from "../../core/contracts/action.js";
-
 export const POINTER_ABSOLUTE_MAX = 0xffff;
 const POINTER_MOVE_FLAGS = 0xc001;
 
@@ -77,12 +75,13 @@ export function normalizePointerCoordinate(
 }
 
 export function buildPointerClickPlan(
-  params: ClickParams,
+  x: number,
+  y: number,
   virtualScreen: VirtualScreenMetrics = resolveVirtualScreenMetrics()
 ): PointerClickPlan {
   return {
     moveFlags: POINTER_MOVE_FLAGS,
-    coordinates: normalizePointerCoordinate(params.x!, params.y!, virtualScreen),
+    coordinates: normalizePointerCoordinate(x, y, virtualScreen),
     reservedPrimitives: {
       scroll: {
         kind: "scroll",

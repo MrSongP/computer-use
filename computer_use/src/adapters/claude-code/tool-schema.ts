@@ -266,7 +266,7 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
     case "click":
       return {
         type: "object",
-        description: "Click at window-relative coordinates or target an indexed accessibility element. Provide either x+y coordinates or element_index; runtime validation enforces that contract.",
+        description: "Click at window-relative coordinates. The model chooses the target point; the runtime only resolves window-relative coordinates into screen coordinates and executes the click.",
         properties: {
           window: windowRefSchema,
           x: {
@@ -283,17 +283,12 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
             description: "Number of clicks to send."
           },
           mouse_button: mouseButtonSchema,
-          element_index: {
-            type: "integer",
-            minimum: 0,
-            description: "Optional indexed accessibility element to click instead of raw coordinates."
-          },
           screenshotId: {
             type: "string",
             description: "Optional screenshot correlation id from a prior snapshot."
           }
         },
-        required: ["window"],
+        required: ["window", "x", "y"],
         additionalProperties: false
       };
 

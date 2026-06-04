@@ -23,23 +23,22 @@ export class ClickHandler {
         const params = validateClickParams(request.params);
         trace.setInputParams(params);
         trace.setTargetWindow(params.window);
-        trace.setClickCoordinates({
-          x: typeof params.x === "number" ? params.x : null,
-          y: typeof params.y === "number" ? params.y : null,
-          mouseButton: params.mouse_button,
-          clickCount: params.click_count
-        });
         trace.setElementInfo(
-          params.element_index === undefined && params.screenshotId === undefined
+          params.screenshotId === undefined
             ? null
             : {
-                elementIndex: params.element_index,
                 screenshotId: params.screenshotId
               }
         );
 
         this.context.endTurn.begin(request.meta);
         const activationService = new WindowActivationService(this.context.nativeBridge);
+        trace.setClickCoordinates({
+          x: params.x,
+          y: params.y,
+          mouseButton: params.mouse_button,
+          clickCount: params.click_count
+        });
         const pointerInputService = new PointerInputService(
           activationService,
           this.context.nativeBridge
