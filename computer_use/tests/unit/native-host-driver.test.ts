@@ -48,6 +48,27 @@ test("NativeHostBridge reports the native-host timeout cause when fallback also 
   );
 });
 
+test("NativeHostBridge disposes the native-host process after endTurn flushes", async () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge()
+  });
+  const fakeChild = createHungChild();
+  const methods: string[] = [];
+
+  (bridge as any).hostProcess = fakeChild;
+  (bridge as any).turnStarted = true;
+  (bridge as any).invokeHost = async (method: string) => {
+    methods.push(method);
+  };
+
+  bridge.endTurn();
+  await waitFor(() => fakeChild.killCalled);
+
+  assert.deepEqual(methods, ["endTurn"]);
+  assert.equal(fakeChild.killCalled, true);
+  assert.equal((bridge as any).hostProcess, undefined);
+});
+
 function createHungChild() {
   return {
     killed: false,
@@ -64,4 +85,16 @@ function createHungChild() {
       return true;
     }
   };
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  assert.fail("condition was not met in time");
 }

@@ -166,7 +166,7 @@ GOOD: for canvas/hotkey apps, focus the work surface, clear modal state, then ba
 - After a stale handle or lost window binding, recover a current window object with `get_window({ id, app })` using an id and app from an earlier returned `WindowRef`.
 - By default, request both screenshot and text only when both will drive the next decision. For simple visual inspection, screenshot is enough. For element targeting, request text and use `element_index`.
 - Accessibility text is returned as a structured node tree under `text`. Element indexes are stable only for the latest `get_window_state({ include_text: true })` result.
-- When `include_text: true` returns a large tree, filter by role/name/value/bounds/patterns and inspect a bounded subset. Do not dump the full tree unless the user explicitly needs it.
+- When `include_text: true` may return a large tree, pass `max_elements`, `role_filter`, and `name_contains` to narrow the snapshot before inspecting fields. Do not dump the full tree unless it is small or the user explicitly needs it.
 - Screenshot data is returned in `screenshot.data` with `mime: "image/jpeg"` plus dimensions and `source`. Do not write screenshots to disk just to inspect them unless the user asked for saved evidence or trace is enabled for debugging.
 - If `get_window_state` fails, stop app input and report the exact error. Do not continue with stale coordinates or attempt to bypass.
 - The Computer Use tool will activate the target window before `click`, `drag`, `scroll`, `type_text`, `press_key`, `set_value`, `click_element`, `activate_window`, or `perform_secondary_action`. If activation or focus fails, refresh with `list_apps`/`get_window_state` and reselect the target instead of acting on a stale window.
@@ -377,6 +377,8 @@ type GetWindowStateInput = {
   include_text?: boolean;
   jpeg_quality?: number;
   max_elements?: number;
+  role_filter?: string[];
+  name_contains?: string;
 };
 
 type WindowStateResult = {
@@ -405,6 +407,12 @@ type WindowStateResult = {
     textRequested: boolean;
     screenshotSource?: string;
     textSource?: string;
+    elementsReturned?: number;
+    elementsTotal?: number;
+    elementsMatched?: number;
+    truncated?: boolean;
+    partial?: boolean;
+    lastReturnedIndex?: number;
   };
 };
 

@@ -248,6 +248,15 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
             minimum: 1,
             maximum: 10000,
             description: "Maximum indexed accessibility elements to include."
+          },
+          role_filter: {
+            type: "array",
+            items: { type: "string" },
+            description: "Optional accessibility role filter, for example [\"Edit\", \"Button\"]."
+          },
+          name_contains: {
+            type: "string",
+            description: "Optional case-insensitive substring filter applied to accessibility node names."
           }
         },
         required: ["window"],

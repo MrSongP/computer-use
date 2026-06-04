@@ -10,6 +10,8 @@ export interface WindowStateParams {
   include_text?: boolean;
   jpeg_quality?: number;
   max_elements?: number;
+  role_filter?: readonly string[];
+  name_contains?: string;
 }
 
 export interface WindowStateScreenshot {
@@ -56,6 +58,12 @@ export interface WindowStateResult {
     textRequested: boolean;
     screenshotSource?: string;
     textSource?: string;
+    elementsReturned?: number;
+    elementsTotal?: number;
+    elementsMatched?: number;
+    truncated?: boolean;
+    partial?: boolean;
+    lastReturnedIndex?: number;
   };
 }
 

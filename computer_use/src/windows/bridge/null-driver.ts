@@ -177,7 +177,13 @@ export class NullNativeBridge implements NativeBridge {
         screenshotRequested: params.include_screenshot !== false,
         textRequested: params.include_text !== false,
         screenshotSource: params.include_screenshot === false ? undefined : "mock",
-        textSource: params.include_text === false ? undefined : "mock"
+        textSource: params.include_text === false ? undefined : "mock",
+        elementsReturned: params.include_text === false ? undefined : 2,
+        elementsTotal: params.include_text === false ? undefined : 2,
+        elementsMatched: params.include_text === false ? undefined : 2,
+        truncated: params.include_text === false ? undefined : false,
+        partial: params.include_text === false ? undefined : false,
+        lastReturnedIndex: params.include_text === false ? undefined : 1
       }
     };
     this.invocations.push({ name: "getWindowState", payload: params });

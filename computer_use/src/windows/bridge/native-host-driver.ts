@@ -159,12 +159,14 @@ export class NativeHostBridge implements NativeBridge {
     }
 
     const endTurnTask = this.enqueue(async () => {
-      if (!this.turnStarted) {
-        return;
+      try {
+        if (this.turnStarted) {
+          await this.invokeHost("endTurn", { meta: turnMeta ?? null });
+        }
+      } finally {
+        this.turnStarted = false;
+        this.disposeHostProcess();
       }
-
-      await this.invokeHost("endTurn", { meta: turnMeta ?? null });
-      this.turnStarted = false;
     });
 
     void endTurnTask.catch((error) => {
@@ -630,26 +632,24 @@ async function ensureNativeHostAssembly(options: NativeHostAssemblyOptions): Pro
       await mkdir(path.dirname(executablePath), { recursive: true });
 
       try {
-        const references = await resolveCscReferences();
-        await execFileAsync(
-          cscExecutable,
-          [
-            "/nologo",
-            "/target:exe",
-            `/out:${executablePath}`,
-            "/r:System.Web.Extensions.dll",
-            "/r:System.Drawing.dll",
-            ...references.map((reference) => `/r:${reference}`),
-            options.sourcePath
-          ],
-          {
-            cwd: path.dirname(options.projectPath),
-            timeout: options.buildTimeoutMs,
-            windowsHide: true
-          }
-        );
+        await compileNativeHostWithCsc(cscExecutable, executablePath, options);
       } catch (error) {
-        throw new NativeHostBuildError(`Failed to compile the native host with csc.exe: ${formatExecError(error)}`);
+        const fallbackExecutablePath = getFallbackNativeHostExecutablePath(
+          options.projectPath,
+          options.buildConfiguration
+        );
+        try {
+          await compileNativeHostWithCsc(cscExecutable, fallbackExecutablePath, options);
+          return {
+            command: fallbackExecutablePath,
+            args: []
+          };
+        } catch (fallbackError) {
+          throw new NativeHostBuildError(
+            `Failed to compile the native host with csc.exe: ${formatExecError(error)}` +
+            `\nFallback compile failed: ${formatExecError(fallbackError)}`
+          );
+        }
       }
     }
 
@@ -712,6 +712,40 @@ function getNativeHostAssemblyPath(projectPath: string, buildConfiguration: stri
 
 function getNativeHostExecutablePath(projectPath: string, buildConfiguration: string): string {
   return path.join(path.dirname(projectPath), "bin", buildConfiguration, "ComputerUse.NativeHost.exe");
+}
+
+function getFallbackNativeHostExecutablePath(projectPath: string, buildConfiguration: string): string {
+  return path.join(
+    path.dirname(projectPath),
+    "bin",
+    buildConfiguration,
+    `ComputerUse.NativeHost.${process.pid}.${Date.now()}.exe`
+  );
+}
+
+async function compileNativeHostWithCsc(
+  cscExecutable: string,
+  executablePath: string,
+  options: NativeHostAssemblyOptions
+): Promise<void> {
+  const references = await resolveCscReferences();
+  await execFileAsync(
+    cscExecutable,
+    [
+      "/nologo",
+      "/target:exe",
+      `/out:${executablePath}`,
+      "/r:System.Web.Extensions.dll",
+      "/r:System.Drawing.dll",
+      ...references.map((reference) => `/r:${reference}`),
+      options.sourcePath
+    ],
+    {
+      cwd: path.dirname(options.projectPath),
+      timeout: options.buildTimeoutMs,
+      windowsHide: true
+    }
+  );
 }
 
 function resolveNativeHostPath(...relativeCandidates: readonly string[]): string {

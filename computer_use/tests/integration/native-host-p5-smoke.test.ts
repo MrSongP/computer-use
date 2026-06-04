@@ -98,6 +98,29 @@ test("native host closes the P5 exit with real WGC and UIA smoke coverage", asyn
         "expand-capable combo node"
       );
 
+      const filteredState = (await client.request("getWindowState", {
+        params: {
+          window,
+          include_screenshot: false,
+          include_text: true,
+          max_elements: 2,
+          role_filter: ["Button"],
+          name_contains: "Apply"
+        }
+      })).result;
+      const filteredNodes = flattenNodes(filteredState.text);
+      const filteredButton = requireNode(
+        filteredNodes,
+        (node) => node.name === "Apply" && node.role === "Button",
+        "filtered Apply button"
+      );
+      assert.equal(filteredState.capture.elementsReturned, 2);
+      assert.equal(filteredState.capture.elementsMatched, 1);
+      assert.equal(filteredState.capture.truncated, false);
+      assert.equal(filteredState.capture.partial, false);
+      assert.ok(filteredState.capture.elementsTotal >= filteredState.capture.elementsReturned);
+      assert.equal(filteredState.capture.lastReturnedIndex, filteredButton.index);
+
       await client.request("setValue", {
         params: {
           window,

@@ -1052,6 +1052,11 @@ namespace ComputerUse.NativeHost
             var includeText = ReadOptionalBool(payload, "include_text", true);
             var jpegQuality = Math.Max(1, Math.Min(100, ReadOptionalInt(payload, "jpeg_quality", 85)));
             var maxElements = Math.Max(1, Math.Min(10000, ReadOptionalInt(payload, "max_elements", 500)));
+            var accessibilityOptions = new AccessibilityCaptureOptions(
+                maxElements,
+                ReadOptionalStringList(payload, "role_filter"),
+                ReadOptionalString(payload, "name_contains")
+            );
 
             var stateWindow = BuildWindowStatePayload(hwnd, requestedApp);
             if (stateWindow == null)
@@ -1081,9 +1086,18 @@ namespace ComputerUse.NativeHost
 
             if (includeText)
             {
-                var text = BuildAccessibilityTree(hwnd, maxElements);
-                result["text"] = text;
+                var text = BuildAccessibilityTree(hwnd, accessibilityOptions);
+                result["text"] = text.Root;
                 capture["textSource"] = "uia";
+                capture["elementsReturned"] = text.ReturnedCount;
+                capture["elementsTotal"] = text.TotalCount;
+                capture["elementsMatched"] = text.MatchedCount;
+                capture["truncated"] = text.Truncated;
+                capture["partial"] = text.Truncated;
+                if (text.HasLastReturnedIndex)
+                {
+                    capture["lastReturnedIndex"] = text.LastReturnedIndex;
+                }
             }
 
             result["capture"] = capture;
@@ -1682,7 +1696,10 @@ namespace ComputerUse.NativeHost
             }
         }
 
-        private Dictionary<string, object> BuildAccessibilityTree(IntPtr hwnd, int maxElements)
+        private AccessibilityCaptureResult BuildAccessibilityTree(
+            IntPtr hwnd,
+            AccessibilityCaptureOptions options
+        )
         {
             var root = AutomationElement.FromHandle(hwnd);
             if (root == null)
@@ -1694,16 +1711,142 @@ namespace ComputerUse.NativeHost
                 );
             }
 
-            var nextIndex = 0;
-            return SerializeElement(root, ref nextIndex, maxElements);
+            if (options.HasFilter)
+            {
+                return BuildFilteredAccessibilityTree(root, options);
+            }
+
+            return BuildFullAccessibilityTree(root, options);
         }
 
-        private Dictionary<string, object> SerializeElement(AutomationElement element, ref int nextIndex, int maxElements)
+        private AccessibilityCaptureResult BuildFullAccessibilityTree(
+            AutomationElement root,
+            AccessibilityCaptureOptions options
+        )
+        {
+            var result = new AccessibilityCaptureResult();
+            var nextIndex = 0;
+            result.Root = SerializeFullElement(root, ref nextIndex, options, result);
+            return result;
+        }
+
+        private Dictionary<string, object> SerializeFullElement(
+            AutomationElement element,
+            ref int nextIndex,
+            AccessibilityCaptureOptions options,
+            AccessibilityCaptureResult result
+        )
         {
             ThrowIfInterrupted();
 
+            var elementIndex = nextIndex++;
+            result.TotalCount++;
+            result.MatchedCount++;
+
+            Dictionary<string, object> payload = null;
+            List<Dictionary<string, object>> children = null;
+            if (result.ReturnedCount < options.MaxElements)
+            {
+                payload = CreateAccessibilityNodePayload(element, elementIndex);
+                children = new List<Dictionary<string, object>>();
+                payload["children"] = children;
+                result.MarkReturned(elementIndex);
+            }
+            else
+            {
+                result.Truncated = true;
+            }
+
+            var walker = TreeWalker.ControlViewWalker;
+            var child = walker.GetFirstChild(element);
+            while (child != null)
+            {
+                var childPayload = SerializeFullElement(child, ref nextIndex, options, result);
+                if (payload != null && childPayload != null)
+                {
+                    children.Add(childPayload);
+                }
+                child = walker.GetNextSibling(child);
+            }
+
+            return payload;
+        }
+
+        private AccessibilityCaptureResult BuildFilteredAccessibilityTree(
+            AutomationElement root,
+            AccessibilityCaptureOptions options
+        )
+        {
+            var result = new AccessibilityCaptureResult();
+            var nextIndex = 0;
+            var rootIndex = nextIndex++;
+            result.TotalCount++;
+
+            result.Root = CreateAccessibilityNodePayload(root, rootIndex);
+            var children = new List<Dictionary<string, object>>();
+            result.Root["children"] = children;
+            result.MarkReturned(rootIndex);
+
+            if (ElementMatchesFilter(root, options))
+            {
+                result.MatchedCount++;
+            }
+
+            var walker = TreeWalker.ControlViewWalker;
+            var child = walker.GetFirstChild(root);
+            while (child != null)
+            {
+                AppendFilteredAccessibilityNodes(child, ref nextIndex, options, result, children);
+                child = walker.GetNextSibling(child);
+            }
+
+            return result;
+        }
+
+        private void AppendFilteredAccessibilityNodes(
+            AutomationElement element,
+            ref int nextIndex,
+            AccessibilityCaptureOptions options,
+            AccessibilityCaptureResult result,
+            IList<Dictionary<string, object>> matches
+        )
+        {
+            ThrowIfInterrupted();
+
+            var elementIndex = nextIndex++;
+            result.TotalCount++;
+            if (ElementMatchesFilter(element, options))
+            {
+                result.MatchedCount++;
+                if (result.ReturnedCount < options.MaxElements)
+                {
+                    var payload = CreateAccessibilityNodePayload(element, elementIndex);
+                    payload["children"] = new List<Dictionary<string, object>>();
+                    matches.Add(payload);
+                    result.MarkReturned(elementIndex);
+                }
+                else
+                {
+                    result.Truncated = true;
+                }
+            }
+
+            var walker = TreeWalker.ControlViewWalker;
+            var child = walker.GetFirstChild(element);
+            while (child != null)
+            {
+                AppendFilteredAccessibilityNodes(child, ref nextIndex, options, result, matches);
+                child = walker.GetNextSibling(child);
+            }
+        }
+
+        private Dictionary<string, object> CreateAccessibilityNodePayload(
+            AutomationElement element,
+            int elementIndex
+        )
+        {
             var payload = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-            payload["index"] = nextIndex++;
+            payload["index"] = elementIndex;
             payload["role"] = CleanControlTypeName(element.Current.ControlType);
             if (!string.IsNullOrWhiteSpace(element.Current.Name))
             {
@@ -1736,20 +1879,35 @@ namespace ComputerUse.NativeHost
                 payload["secondaryActions"] = BuildSecondaryActions(patterns);
             }
 
-            var children = new List<Dictionary<string, object>>();
-            if (nextIndex < maxElements)
+            if (!payload.ContainsKey("children"))
             {
-                var walker = TreeWalker.ControlViewWalker;
-                var child = walker.GetFirstChild(element);
-                while (child != null && nextIndex < maxElements)
+                payload["children"] = new List<Dictionary<string, object>>();
+            }
+
+            return payload;
+        }
+
+        private static bool ElementMatchesFilter(
+            AutomationElement element,
+            AccessibilityCaptureOptions options
+        )
+        {
+            var role = CleanControlTypeName(element.Current.ControlType);
+            if (options.RoleFilter.Count > 0 && !options.RoleFilter.Contains(role))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(options.NameContains))
+            {
+                var name = element.Current.Name ?? string.Empty;
+                if (name.IndexOf(options.NameContains, StringComparison.OrdinalIgnoreCase) < 0)
                 {
-                    children.Add(SerializeElement(child, ref nextIndex, maxElements));
-                    child = walker.GetNextSibling(child);
+                    return false;
                 }
             }
 
-            payload["children"] = children;
-            return payload;
+            return true;
         }
 
         private AutomationElement ResolveElementByIndex(IntPtr hwnd, int elementIndex)
@@ -1876,19 +2034,34 @@ namespace ComputerUse.NativeHost
         private static string ReadElementValue(AutomationElement element)
         {
             object pattern;
-            if (!element.TryGetCurrentPattern(ValuePattern.Pattern, out pattern))
+            if (element.TryGetCurrentPattern(ValuePattern.Pattern, out pattern))
             {
-                return null;
+                try
+                {
+                    var value = ((ValuePattern)pattern).Current.Value;
+                    if (!string.IsNullOrEmpty(value))
+                    {
+                        return value;
+                    }
+                }
+                catch
+                {
+                }
             }
 
-            try
+            if (element.TryGetCurrentPattern(TextPattern.Pattern, out pattern))
             {
-                return ((ValuePattern)pattern).Current.Value;
+                try
+                {
+                    return ((TextPattern)pattern).DocumentRange.GetText(4096);
+                }
+                catch
+                {
+                    return null;
+                }
             }
-            catch
-            {
-                return null;
-            }
+
+            return null;
         }
 
         private static List<string> ReadPatternNames(AutomationElement element)
@@ -1915,6 +2088,10 @@ namespace ComputerUse.NativeHost
                 else if (pattern == ExpandCollapsePattern.Pattern)
                 {
                     names.Add("ExpandCollapsePattern");
+                }
+                else if (pattern == TextPattern.Pattern)
+                {
+                    names.Add("TextPattern");
                 }
             }
 
@@ -2368,6 +2545,43 @@ namespace ComputerUse.NativeHost
 
             var text = value.ToString();
             return string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+        }
+
+        private static IList<string> ReadOptionalStringList(IDictionary<string, object> values, string key)
+        {
+            object value;
+            if (!values.TryGetValue(key, out value) || value == null)
+            {
+                return new List<string>();
+            }
+
+            if (value is string)
+            {
+                throw NativeHostException.InvalidRequest("Native-host payload '" + key + "' must be an array.");
+            }
+
+            var items = value as IEnumerable;
+            if (items == null)
+            {
+                throw NativeHostException.InvalidRequest("Native-host payload '" + key + "' must be an array.");
+            }
+
+            var result = new List<string>();
+            foreach (var item in items)
+            {
+                if (item == null)
+                {
+                    continue;
+                }
+
+                var text = item.ToString();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    result.Add(text.Trim());
+                }
+            }
+
+            return result;
         }
 
         private static bool ReadOptionalBool(IDictionary<string, object> values, string key, bool defaultValue)
@@ -3319,6 +3533,77 @@ namespace ComputerUse.NativeHost
         public ushort VkCode;
         public ushort ScanCode;
         public uint Flags;
+    }
+
+    internal sealed class AccessibilityCaptureOptions
+    {
+        public AccessibilityCaptureOptions(int maxElements, IList<string> roleFilter, string nameContains)
+        {
+            MaxElements = maxElements;
+            RoleFilter = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (roleFilter != null)
+            {
+                foreach (var role in roleFilter)
+                {
+                    var normalized = NormalizeRoleName(role);
+                    if (!string.IsNullOrWhiteSpace(normalized))
+                    {
+                        RoleFilter.Add(normalized);
+                    }
+                }
+            }
+
+            NameContains = string.IsNullOrWhiteSpace(nameContains) ? null : nameContains.Trim();
+        }
+
+        public int MaxElements { get; private set; }
+
+        public HashSet<string> RoleFilter { get; private set; }
+
+        public string NameContains { get; private set; }
+
+        public bool HasFilter
+        {
+            get
+            {
+                return RoleFilter.Count > 0 || !string.IsNullOrWhiteSpace(NameContains);
+            }
+        }
+
+        private static string NormalizeRoleName(string role)
+        {
+            if (string.IsNullOrWhiteSpace(role))
+            {
+                return null;
+            }
+
+            var trimmed = role.Trim();
+            const string prefix = "ControlType.";
+            if (trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed.Substring(prefix.Length);
+            }
+
+            return trimmed;
+        }
+    }
+
+    internal sealed class AccessibilityCaptureResult
+    {
+        public Dictionary<string, object> Root;
+        public int TotalCount;
+        public int MatchedCount;
+        public int ReturnedCount;
+        public bool Truncated;
+        public int LastReturnedIndex;
+        public bool HasLastReturnedIndex;
+
+        public void MarkReturned(int elementIndex)
+        {
+            ReturnedCount++;
+            LastReturnedIndex = elementIndex;
+            HasLastReturnedIndex = true;
+        }
     }
 
     internal sealed class PointerClickDto

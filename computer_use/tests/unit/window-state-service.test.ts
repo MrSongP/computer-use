@@ -38,3 +38,52 @@ test("window state service enables screenshot and text capture by default", asyn
     }
   ]);
 });
+
+test("window state service forwards accessibility filters and max elements", async () => {
+  const calls: WindowStateParams[] = [];
+  const bridge = {
+    async getWindowState(params: WindowStateParams): Promise<WindowStateResult> {
+      calls.push(params);
+      return {
+        window: {
+          ...params.window,
+          rect: { left: 1, top: 2, right: 3, bottom: 4 },
+          visible: true,
+          minimized: false,
+          focused: true
+        },
+        capture: {
+          screenshotRequested: params.include_screenshot ?? false,
+          textRequested: params.include_text ?? false,
+          elementsReturned: 2,
+          elementsTotal: 20,
+          elementsMatched: 4,
+          truncated: true,
+          partial: true,
+          lastReturnedIndex: 7
+        }
+      };
+    }
+  } as NativeBridge;
+
+  const service = new WindowStateService(bridge);
+  await service.getWindowState({
+    window: { id: 101, app: "demo.exe" },
+    include_screenshot: false,
+    include_text: true,
+    max_elements: 2,
+    role_filter: ["Edit", "Button"],
+    name_contains: "input"
+  });
+
+  assert.deepEqual(calls, [
+    {
+      window: { id: 101, app: "demo.exe" },
+      include_screenshot: false,
+      include_text: true,
+      max_elements: 2,
+      role_filter: ["Edit", "Button"],
+      name_contains: "input"
+    }
+  ]);
+});
