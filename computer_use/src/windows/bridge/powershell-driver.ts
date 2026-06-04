@@ -27,6 +27,12 @@ using System.Runtime.InteropServices;
 
 namespace ComputerUse {
   [StructLayout(LayoutKind.Sequential)]
+  public struct POINT {
+    public Int32 x;
+    public Int32 y;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
   public struct KEYBDINPUT {
     public UInt16 wVk;
     public UInt16 wScan;
@@ -96,6 +102,9 @@ namespace ComputerUse {
     public static extern void keybd_event(Byte bVk, Byte bScan, UInt32 dwFlags, UIntPtr dwExtraInfo);
 
     [DllImport("user32.dll", SetLastError = true)]
+    public static extern Boolean GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll", SetLastError = true)]
     public static extern Boolean SetCursorPos(Int32 x, Int32 y);
   }
 }
@@ -153,6 +162,42 @@ function Invoke-SendInput([ComputerUse.INPUT[]]$inputs) {
   }
 }
 
+function Invoke-PasteShortcut {
+  $ctrlDown = New-KeyboardInput ([UInt16]0x11) ([UInt16]0) ([UInt32]0)
+  $vDown = New-KeyboardInput ([UInt16]0x56) ([UInt16]0) ([UInt32]0)
+  $vUp = New-KeyboardInput ([UInt16]0x56) ([UInt16]0) ([UInt32][ComputerUse.Win32]::KEYEVENTF_KEYUP)
+  $ctrlUp = New-KeyboardInput ([UInt16]0x11) ([UInt16]0) ([UInt32][ComputerUse.Win32]::KEYEVENTF_KEYUP)
+  Invoke-SendInput @($ctrlDown, $vDown, $vUp, $ctrlUp)
+}
+
+function Invoke-SendText([string]$text) {
+  $previousText = $null
+  $hadPreviousText = $false
+
+  try {
+    $clipboardValue = Get-Clipboard -Raw
+    if ($clipboardValue -is [string]) {
+      $previousText = $clipboardValue
+      $hadPreviousText = $true
+    }
+  } catch {
+  }
+
+  try {
+    Set-Clipboard -Value $text
+    Start-Sleep -Milliseconds 20
+    Invoke-PasteShortcut
+    Start-Sleep -Milliseconds 20
+  } finally {
+    if ($hadPreviousText) {
+      try {
+        Set-Clipboard -Value $previousText
+      } catch {
+      }
+    }
+  }
+}
+
 function Test-IsForegroundWindow([IntPtr]$hwnd) {
   if ($hwnd -eq [IntPtr]::Zero) {
     return $false
@@ -197,6 +242,57 @@ function Invoke-ForceForeground([IntPtr]$hwnd) {
   return $false
 }
 
+function Move-CursorHumanized([Int32]$targetX, [Int32]$targetY) {
+  $start = New-Object ComputerUse.POINT
+  if (-not [ComputerUse.Win32]::GetCursorPos([ref]$start)) {
+    if (-not [ComputerUse.Win32]::SetCursorPos($targetX, $targetY)) {
+      throw "SetCursorPos failed with Win32 error $(Get-LastErrorCode)."
+    }
+    Start-Sleep -Milliseconds 18
+    return
+  }
+
+  $deltaX = [double]($targetX - $start.x)
+  $deltaY = [double]($targetY - $start.y)
+  $distance = [Math]::Sqrt(($deltaX * $deltaX) + ($deltaY * $deltaY))
+  if ($distance -lt 2.0) {
+    if (-not [ComputerUse.Win32]::SetCursorPos($targetX, $targetY)) {
+      throw "SetCursorPos failed with Win32 error $(Get-LastErrorCode)."
+    }
+    Start-Sleep -Milliseconds 18
+    return
+  }
+
+  $steps = [int][Math]::Max(6, [Math]::Min(30, [Math]::Ceiling($distance / 22.0)))
+  $durationMs = [int][Math]::Max(90, [Math]::Min(220, [Math]::Round(80.0 + ($distance * 0.35))))
+  $stepDelayMs = [int][Math]::Max(4, [Math]::Floor($durationMs / $steps))
+  $arcHeight = if ($distance -lt 24.0) { 0.0 } else { [Math]::Min(36.0, $distance * 0.12) }
+  $perpendicularX = (-1.0 * $deltaY) / $distance
+  $perpendicularY = $deltaX / $distance
+  $curveDirection = if (($deltaX -ge 0.0 -and $deltaY -ge 0.0) -or ($deltaX -lt 0.0 -and $deltaY -lt 0.0)) {
+    1.0
+  } else {
+    -1.0
+  }
+
+  for ($step = 1; $step -le $steps; $step++) {
+    $t = $step / [double]$steps
+    $eased = 0.5 - ([Math]::Cos([Math]::PI * $t) / 2.0)
+    $arc = [Math]::Sin([Math]::PI * $t) * $arcHeight * $curveDirection
+    $nextX = [int][Math]::Round($start.x + ($deltaX * $eased) + ($perpendicularX * $arc))
+    $nextY = [int][Math]::Round($start.y + ($deltaY * $eased) + ($perpendicularY * $arc))
+    if (-not [ComputerUse.Win32]::SetCursorPos($nextX, $nextY)) {
+      throw "SetCursorPos failed with Win32 error $(Get-LastErrorCode)."
+    }
+    Start-Sleep -Milliseconds $stepDelayMs
+  }
+
+  if (-not [ComputerUse.Win32]::SetCursorPos($targetX, $targetY)) {
+    throw "SetCursorPos failed with Win32 error $(Get-LastErrorCode)."
+  }
+  Start-Sleep -Milliseconds 18
+}
+
 $payload = $env:COMPUTER_USE_PAYLOAD | ConvertFrom-Json -Depth 10
 
 switch ($payload.action) {
@@ -221,6 +317,10 @@ switch ($payload.action) {
     }
     break
   }
+  'sendText' {
+    Invoke-SendText ([string]$payload.text)
+    break
+  }
   'sendKeyboardInputs' {
     $items = @($payload.inputs)
     $inputs = New-Object 'ComputerUse.INPUT[]' $items.Count
@@ -233,10 +333,7 @@ switch ($payload.action) {
     break
   }
   'sendPointerClick' {
-    if (-not [ComputerUse.Win32]::SetCursorPos([Int32]$payload.click.x, [Int32]$payload.click.y)) {
-      throw "SetCursorPos failed with Win32 error $(Get-LastErrorCode)."
-    }
-    Start-Sleep -Milliseconds 10
+    Move-CursorHumanized ([Int32]$payload.click.x) ([Int32]$payload.click.y)
 
     switch ($payload.click.button) {
       'left' {
@@ -319,6 +416,14 @@ export class PowerShellNativeBridge implements NativeBridge {
     await this.invoke({
       action: "activateWindow",
       window,
+      meta: this.currentTurnMeta ?? null
+    });
+  }
+
+  async sendText(text: string): Promise<void> {
+    await this.invoke({
+      action: "sendText",
+      text,
       meta: this.currentTurnMeta ?? null
     });
   }
