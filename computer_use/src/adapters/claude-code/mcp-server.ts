@@ -300,14 +300,29 @@ function readTraceMeta(value: unknown): ClaudeCodeInvokeMeta["computerUseTrace"]
 }
 
 function toolResult(result: unknown): unknown {
-  return {
-    content: [
-      {
-        type: "text",
-        text: result === undefined ? "null" : JSON.stringify(result)
-      }
-    ]
-  };
+  const textPayload = redactToolResultForText(result);
+  const content: Array<Record<string, unknown>> = [];
+
+  const screenshot = readScreenshotContent(result);
+  if (screenshot) {
+    content.push({
+      type: "image",
+      data: screenshot.data,
+      mimeType: screenshot.mime
+    });
+  }
+
+  content.push({
+    type: "text",
+    text: textPayload === undefined ? "null" : JSON.stringify(textPayload)
+  });
+
+  const response: Record<string, unknown> = { content };
+  if (isRecord(result)) {
+    response.structuredContent = result;
+  }
+
+  return response;
 }
 
 function toolError(error: unknown): unknown {
@@ -332,6 +347,47 @@ function readProtocolVersion(params: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function readScreenshotContent(value: unknown): { data: string; mime: string } | null {
+  if (!isRecord(value) || !isRecord(value.screenshot)) {
+    return null;
+  }
+
+  const screenshot = value.screenshot;
+  if (typeof screenshot.data !== "string" || typeof screenshot.mime !== "string") {
+    return null;
+  }
+
+  return {
+    data: screenshot.data,
+    mime: screenshot.mime
+  };
+}
+
+function redactToolResultForText(value: unknown): unknown {
+  if (!isRecord(value) || !isRecord(value.screenshot)) {
+    return value;
+  }
+
+  const screenshot = value.screenshot;
+  const byteLength = typeof screenshot.byteLength === "number" ? screenshot.byteLength : null;
+  const raw = isRecord(screenshot.raw) ? screenshot.raw : undefined;
+  const rawByteLength = raw && typeof raw.byteLength === "number" ? raw.byteLength : null;
+
+  return {
+    ...value,
+    screenshot: {
+      ...screenshot,
+      data: byteLength === null ? "<base64>" : `<base64:${byteLength} bytes>`,
+      raw: raw
+        ? {
+            ...raw,
+            data: rawByteLength === null ? "<base64>" : `<base64:${rawByteLength} bytes>`
+          }
+        : undefined
+    }
+  };
 }
 
 function hasAnyKey(value: object): boolean {

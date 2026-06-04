@@ -82,7 +82,7 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
   }).start();
 
   try {
-    const responses = collectOutputLines(output, 4);
+    const responses = collectOutputLines(output, 5);
     input.write(`${JSON.stringify({
       jsonrpc: "2.0",
       id: 1,
@@ -125,6 +125,25 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
       id: 4,
       method: "tools/call",
       params: {
+        name: "get_window_state",
+        arguments: {
+          window: {
+            id: 101,
+            app: "demo.exe",
+            title: "Demo Window"
+          },
+          claudeTurnMetadata: {
+            session_id: "mcp-session",
+            turn_id: "mcp-turn"
+          }
+        }
+      }
+    })}\n`);
+    input.write(`${JSON.stringify({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "tools/call",
+      params: {
         name: "end_turn",
         arguments: {
           claudeTurnMetadata: {
@@ -135,7 +154,7 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
       }
     })}\n`);
 
-    const [initializeLine, toolsLine, listWindowsLine, endTurnLine] = await responses;
+    const [initializeLine, toolsLine, listWindowsLine, windowStateLine, endTurnLine] = await responses;
     const initialize = JSON.parse(initializeLine!);
     assert.equal(initialize.result.serverInfo.name, "computer-use");
     assert.equal(initialize.result.capabilities.tools.listChanged, false);
@@ -154,6 +173,16 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.deepEqual(JSON.parse(listWindows.result.content[0].text), [
       { id: 101, app: "demo.exe", title: "Demo Window" }
     ]);
+
+    const windowState = JSON.parse(windowStateLine!);
+    assert.equal(windowState.result.content[0].type, "image");
+    assert.equal(windowState.result.content[0].mimeType, "image/jpeg");
+    assert.equal(typeof windowState.result.content[0].data, "string");
+    assert.equal(windowState.result.content[1].type, "text");
+    const textPayload = JSON.parse(windowState.result.content[1].text);
+    assert.equal(textPayload.screenshot.data, "<base64:9 bytes>");
+    assert.equal("raw" in textPayload.screenshot, false);
+    assert.equal(windowState.result.structuredContent.screenshot.data, "bW9jay1qcGVn");
 
     const endTurn = JSON.parse(endTurnLine!);
     assert.deepEqual(JSON.parse(endTurn.result.content[0].text), null);
