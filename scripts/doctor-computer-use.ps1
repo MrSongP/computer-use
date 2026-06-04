@@ -14,6 +14,19 @@ function Get-ClaudeUserSettingsPath {
   return Join-Path $HOME ".claude\settings.json"
 }
 
+function Read-ClaudeJsonFile {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path
+  )
+
+  try {
+    return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+  } catch {
+    throw "Failed to parse Claude project settings JSON at $Path. $($_.Exception.Message)"
+  }
+}
+
 function Assert-ClaudeUserPermissionRule {
   param(
     [Parameter(Mandatory = $true)]
@@ -26,11 +39,7 @@ function Assert-ClaudeUserPermissionRule {
     throw "Claude project settings file is missing: $SettingsPath"
   }
 
-  try {
-    $settings = Get-Content -LiteralPath $SettingsPath -Raw | ConvertFrom-Json
-  } catch {
-    throw "Failed to parse Claude project settings JSON at $SettingsPath. $($_.Exception.Message)"
-  }
+  $settings = Read-ClaudeJsonFile -Path $SettingsPath
 
   $allowRules = @()
   if ($null -ne $settings.permissions -and $null -ne $settings.permissions.allow) {

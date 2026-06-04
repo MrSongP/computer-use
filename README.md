@@ -22,8 +22,10 @@
 
 ```powershell
 cd G:\Desktop\computer_use
-powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
+powershell -ExecutionPolicy Bypass -File .\install-claude-code.ps1
 ```
+
+也兼容旧入口 `.\scripts\install-claude-code.ps1`。
 
 这个脚本会完成：
 
@@ -36,6 +38,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
 安装完成后，在当前 Claude Code 会话里执行 `/reload-plugins`，或者直接开一个新会话。
 
 安装脚本还会自动把 `mcp__plugin_computer-use_computer-use` 合并写入用户级 `~/.claude/settings.json`，这样 Claude Code 会把整个 `computer-use` MCP server 视为已允许，避免 `launch_app`、`click`、`type_text` 这类调用每一步都弹 `Yes`。这是用户级配置，所以不依赖你从哪个目录启动 Claude Code。
+
+安装脚本现在会先按 UTF-8 预检并备份 `~/.claude/settings.json`，如果后续安装链路失败，会自动恢复原始 settings 和插件安装状态，避免“插件已经重装了但脚本整体报错”的半成功状态。
 
 Claude Code 的 marketplace manifest 在 [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json)，它会把 [`./computer_use`](./computer_use/) 作为真实插件目录安装。
 
@@ -121,14 +125,18 @@ Run the dedicated Claude Code installer from the repository root:
 
 ```powershell
 cd G:\Desktop\computer_use
-powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
+powershell -ExecutionPolicy Bypass -File .\install-claude-code.ps1
 ```
+
+The legacy `.\scripts\install-claude-code.ps1` entrypoint still works.
 
 It builds the runtime, validates the Claude marketplace and plugin manifests, runs an MCP smoke test, registers the local marketplace, and installs `computer-use@computer-use-local`.
 
 After the installer finishes, run `/reload-plugins` in the current Claude Code session or start a new session.
 
 The installer also merges `mcp__plugin_computer-use_computer-use` into your user-level `~/.claude/settings.json`, so Claude Code treats the entire `computer-use` MCP server as allowed and can call `launch_app`, `click`, `type_text`, and related tools without a per-step approval prompt. Because this is a user-level setting, it does not depend on which working directory you launch Claude Code from.
+
+Before changing that file, the installer now preflights it as UTF-8 and creates a backup. If a later step fails, it automatically restores the previous settings file and plugin install state.
 
 The Claude Code marketplace manifest lives at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) and points at the real plugin root under [`./computer_use`](./computer_use/).
 

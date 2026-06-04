@@ -24,8 +24,10 @@
 
 ```powershell
 cd G:\Desktop\computer_use
-powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
+powershell -ExecutionPolicy Bypass -File .\install-claude-code.ps1
 ```
+
+兼容旧入口：`powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1`
 
 这个脚本会完成：
 
@@ -51,6 +53,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
 ```
 
 这里使用的是 MCP server 级别 allow rule，而不是逐工具或通配符规则。写入用户级设置后，不依赖 Claude Code 的当前工作目录。
+
+为了避免用户级 settings 编码或后续步骤异常时留下半成功状态，安装脚本现在会先用 UTF-8 预检并备份 `~/.claude/settings.json`；如果安装链路后半段失败，会自动恢复原始 settings 和原先的 Claude 插件安装状态。
 
 ## Codex 安装步骤
 
