@@ -175,6 +175,30 @@ export function getClaudeToolInputSchema(
   return withInvocationMetadata(baseSchema);
 }
 
+export function getClaudeToolOutputSchema(
+  method: CapabilityMethod | "end_turn"
+): ToolInputSchema | undefined {
+  switch (method) {
+    case "list_windows":
+      return {
+        type: "object",
+        description: "Structured list_windows result for MCP clients that require object-shaped structuredContent.",
+        properties: {
+          windows: {
+            type: "array",
+            items: windowRefSchema,
+            description: "Targetable top-level windows."
+          }
+        },
+        required: ["windows"],
+        additionalProperties: false
+      };
+
+    default:
+      return undefined;
+  }
+}
+
 function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInputSchema {
   switch (method) {
     case "list_apps":

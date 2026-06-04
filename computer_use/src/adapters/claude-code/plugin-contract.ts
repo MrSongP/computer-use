@@ -15,6 +15,7 @@ export interface ClaudeCodeCapabilityDescriptor {
   summary: string;
   requiresWindowActivation: boolean;
   inputSchema: ToolInputSchema;
+  outputSchema?: ToolInputSchema;
 }
 
 export interface ClaudeCodeInvokeMeta extends JsonRpcMeta {

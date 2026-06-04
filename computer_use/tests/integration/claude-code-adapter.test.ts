@@ -162,6 +162,9 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     const tools = JSON.parse(toolsLine!);
     assert.equal(tools.result.tools.some((tool: { name: string }) => tool.name === "list_windows"), true);
     assert.equal(tools.result.tools.some((tool: { name: string }) => tool.name === "end_turn"), true);
+    const listWindowsTool = tools.result.tools.find((tool: { name: string }) => tool.name === "list_windows");
+    assert.equal(listWindowsTool.outputSchema.type, "object");
+    assert.deepEqual(listWindowsTool.outputSchema.required, ["windows"]);
     const clickTool = tools.result.tools.find((tool: { name: string }) => tool.name === "click");
     assert.equal(clickTool.inputSchema.required.includes("window"), true);
     assert.equal(clickTool.inputSchema.properties.window.required.includes("id"), true);
@@ -173,6 +176,9 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.deepEqual(JSON.parse(listWindows.result.content[0].text), [
       { id: 101, app: "demo.exe", title: "Demo Window" }
     ]);
+    assert.deepEqual(listWindows.result.structuredContent, {
+      windows: [{ id: 101, app: "demo.exe", title: "Demo Window" }]
+    });
 
     const windowState = JSON.parse(windowStateLine!);
     assert.equal(windowState.result.content[0].type, "image");

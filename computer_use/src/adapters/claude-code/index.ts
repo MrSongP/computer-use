@@ -10,7 +10,7 @@ import {
   type ClaudeCodeInvokeOptions,
   type ClaudeCodePluginContract
 } from "./plugin-contract.js";
-import { getClaudeToolInputSchema } from "./tool-schema.js";
+import { getClaudeToolInputSchema, getClaudeToolOutputSchema } from "./tool-schema.js";
 
 export function createClaudeAdapter(
   runtime: ExecutionContext,
@@ -28,14 +28,16 @@ export function createClaudeAdapter(
       rpcMethod: item.method,
       summary: item.summary,
       requiresWindowActivation: item.requiresWindowActivation,
-      inputSchema: getClaudeToolInputSchema(item.method)
+      inputSchema: getClaudeToolInputSchema(item.method),
+      outputSchema: getClaudeToolOutputSchema(item.method)
     })),
     {
       name: "end_turn",
       rpcMethod: "end_turn",
       summary: "Close the active Claude Code computer-use turn and flush lifecycle state.",
       requiresWindowActivation: false,
-      inputSchema: getClaudeToolInputSchema("end_turn")
+      inputSchema: getClaudeToolInputSchema("end_turn"),
+      outputSchema: getClaudeToolOutputSchema("end_turn")
     }
   ];
 

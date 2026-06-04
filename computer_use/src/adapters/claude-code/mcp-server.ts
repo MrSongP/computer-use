@@ -179,7 +179,7 @@ export class ClaudeMcpStdioServer {
       const result = await this.adapter.invoke(method, payload.params, {
         meta: payload.meta
       });
-      return toolResult(result);
+      return toolResult(method, result);
     } catch (error) {
       if (error instanceof ClaudeCodeAdapterRpcError) {
         return toolError({
@@ -223,11 +223,16 @@ function isMcpRequest(value: unknown): value is McpRequest & { id: JsonRpcId } {
 }
 
 function toMcpToolDescriptor(capability: ClaudeCodeCapabilityDescriptor): unknown {
-  return {
+  const descriptor: Record<string, unknown> = {
     name: capability.name,
     description: capability.summary,
     inputSchema: capability.inputSchema
   };
+  if (capability.outputSchema) {
+    descriptor.outputSchema = capability.outputSchema;
+  }
+
+  return descriptor;
 }
 
 function extractToolCallPayload(args: unknown): ToolCallPayload {
@@ -299,7 +304,7 @@ function readTraceMeta(value: unknown): ClaudeCodeInvokeMeta["computerUseTrace"]
   return hasAnyKey(trace) ? trace : undefined;
 }
 
-function toolResult(result: unknown): unknown {
+function toolResult(method: ClaudeCodeAdapterMethod, result: unknown): unknown {
   const sanitizedPayload = redactToolResultForText(result);
   const content: Array<Record<string, unknown>> = [];
 
@@ -318,11 +323,31 @@ function toolResult(result: unknown): unknown {
   });
 
   const response: Record<string, unknown> = { content };
-  if (isRecord(sanitizedPayload)) {
-    response.structuredContent = sanitizedPayload;
+  const structuredContent = toStructuredContent(method, sanitizedPayload);
+  if (structuredContent) {
+    response.structuredContent = structuredContent;
   }
 
   return response;
+}
+
+function toStructuredContent(
+  method: ClaudeCodeAdapterMethod,
+  value: unknown
+): Record<string, unknown> | null {
+  if (isRecord(value)) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    if (method === "list_windows") {
+      return { windows: value };
+    }
+
+    return { items: value };
+  }
+
+  return null;
 }
 
 function toolError(error: unknown): unknown {
@@ -346,7 +371,7 @@ function readProtocolVersion(params: unknown): string {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readScreenshotContent(value: unknown): { data: string; mime: string } | null {
