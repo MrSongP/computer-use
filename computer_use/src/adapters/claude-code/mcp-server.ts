@@ -300,7 +300,7 @@ function readTraceMeta(value: unknown): ClaudeCodeInvokeMeta["computerUseTrace"]
 }
 
 function toolResult(result: unknown): unknown {
-  const textPayload = redactToolResultForText(result);
+  const sanitizedPayload = redactToolResultForText(result);
   const content: Array<Record<string, unknown>> = [];
 
   const screenshot = readScreenshotContent(result);
@@ -314,12 +314,12 @@ function toolResult(result: unknown): unknown {
 
   content.push({
     type: "text",
-    text: textPayload === undefined ? "null" : JSON.stringify(textPayload)
+    text: sanitizedPayload === undefined ? "null" : JSON.stringify(sanitizedPayload)
   });
 
   const response: Record<string, unknown> = { content };
-  if (isRecord(result)) {
-    response.structuredContent = result;
+  if (isRecord(sanitizedPayload)) {
+    response.structuredContent = sanitizedPayload;
   }
 
   return response;

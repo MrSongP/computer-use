@@ -181,8 +181,8 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.equal(windowState.result.content[1].type, "text");
     const textPayload = JSON.parse(windowState.result.content[1].text);
     assert.equal(textPayload.screenshot.data, "<base64:9 bytes>");
-    assert.equal("raw" in textPayload.screenshot, false);
-    assert.equal(windowState.result.structuredContent.screenshot.data, "bW9jay1qcGVn");
+    assert.equal(windowState.result.structuredContent.screenshot.data, "<base64:9 bytes>");
+    assert.equal(windowState.result.structuredContent.screenshot.source, "mock");
 
     const endTurn = JSON.parse(endTurnLine!);
     assert.deepEqual(JSON.parse(endTurn.result.content[0].text), null);
