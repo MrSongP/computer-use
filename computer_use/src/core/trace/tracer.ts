@@ -11,6 +11,7 @@ import type { LifecycleManager } from "../runtime/lifecycle-manager.js";
 import type { InterruptState } from "../interrupt/interrupt-state.js";
 import type { TraceOptions, ResolvedTraceOptions } from "./trace-config.js";
 import { resolveTraceOptions } from "./trace-config.js";
+import { createPayloadMetrics, type TracePayloadMetrics } from "./payload-metrics.js";
 import {
   TraceArtifactWriter,
   type TraceActionLocation,
@@ -66,6 +67,13 @@ export interface ActionTraceEvidence {
     enabledSource: string;
     outputDir: string;
     outputDirSource: string;
+  };
+  payloadMetrics: {
+    requestEnvelope: TracePayloadMetrics;
+    requestParams: TracePayloadMetrics;
+    responseEnvelope: TracePayloadMetrics | null;
+    responseBody: TracePayloadMetrics | null;
+    thrownError: TracePayloadMetrics | null;
   };
   targetWindow: WindowRef | null;
   inputParams: unknown;
@@ -132,15 +140,16 @@ export class TraceManager {
     const startedAt = new Date();
     let response: TResult | undefined;
     let error: unknown;
+    const requestEnvelope = {
+      id: args.request.id,
+      method: args.request.method,
+      meta: args.request.meta ?? null,
+      params: args.request.params
+    };
 
     if (resolved.enabled) {
       await safeTraceWrite(async () => {
-        await capture.writeJsonArtifact("request", "request.json", {
-          id: args.request.id,
-          method: args.request.method,
-          meta: args.request.meta ?? null,
-          params: args.request.params
-        });
+        await capture.writeJsonArtifact("request", "request.json", requestEnvelope);
       });
     }
 
@@ -180,6 +189,13 @@ export class TraceManager {
               enabledSource: resolved.enabledSource,
               outputDir: resolved.outputDir,
               outputDirSource: resolved.outputDirSource
+            },
+            payloadMetrics: {
+              requestEnvelope: createPayloadMetrics(requestEnvelope),
+              requestParams: createPayloadMetrics(args.request.params),
+              responseEnvelope: response ? createPayloadMetrics(response) : null,
+              responseBody: response ? createPayloadMetrics(readResponseBody(response)) : null,
+              thrownError: error ? createPayloadMetrics(toErrorInfo(error)) : null
             },
             targetWindow: capture.targetWindow,
             inputParams: capture.inputParams,
@@ -418,6 +434,20 @@ function isErrorResponse(
   response: JsonRpcResponse<any> | undefined
 ): response is JsonRpcErrorResponse {
   return Boolean(response && !response.ok);
+}
+
+function readResponseBody(response: JsonRpcResponse<any>): unknown {
+  if (response.ok) {
+    return response.result;
+  }
+
+  return {
+    error: response.error,
+    code: response.code,
+    approvalRequest: response.approvalRequest,
+    details: response.details,
+    guidance: response.guidance
+  };
 }
 
 async function safeTraceWrite(operation: () => Promise<void>): Promise<void> {

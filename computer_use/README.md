@@ -58,6 +58,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
 - 环境变量：`COMPUTER_USE_TRACE=1` 和可选 `COMPUTER_USE_TRACE_DIR=...`
 - Request-level override：`meta.computerUseTrace = { enabled: true, outputDir: "..." }`
 - Evidence 写入 `sessionId/turnId/actionId/`，包含 `request.json`、`response.json` 或 `error.json`、`evidence.json`。
+- `evidence.json` 现在还会写 `payloadMetrics`：request/response 的 UTF-8 字节数、字符数和 token 估算，可直接用于分析耗时、错误率和返回体规模。
+- 聚合汇总可运行：`npm run trace:summary -- G:\\path\\to\\computer-use-trace`
 
 ## 文档
 

@@ -85,6 +85,11 @@ test("request-level trace meta writes success evidence under session and turn fo
     });
     assert.equal(evidence.error, null);
     assert.equal(evidence.response.ok, true);
+    assert.equal(evidence.payloadMetrics.requestEnvelope.utf8Bytes > 0, true);
+    assert.equal(evidence.payloadMetrics.requestParams.estimatedTokens > 0, true);
+    assert.equal(evidence.payloadMetrics.responseEnvelope.estimatedTokens > 0, true);
+    assert.equal(evidence.payloadMetrics.responseBody.estimatedTokens >= 1, true);
+    assert.equal(evidence.payloadMetrics.thrownError, null);
     assert.deepEqual(
       evidence.artifacts.map((artifact: { kind: string }) => artifact.kind),
       ["request", "activation", "pointer", "response"]
@@ -131,6 +136,9 @@ test("config-level trace writes failure evidence for rejected actions", async ()
     assert.equal(evidence.trace.enabledSource, "config");
     assert.equal(evidence.hostSource, "claude-code");
     assert.equal(evidence.error.message, "press_key requires a key string");
+    assert.equal(evidence.payloadMetrics.responseEnvelope, null);
+    assert.equal(evidence.payloadMetrics.responseBody, null);
+    assert.equal(evidence.payloadMetrics.thrownError.estimatedTokens > 0, true);
     assert.deepEqual(
       evidence.artifacts.map((artifact: { kind: string }) => artifact.kind),
       ["request", "error"]
