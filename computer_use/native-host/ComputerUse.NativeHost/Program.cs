@@ -126,6 +126,17 @@ namespace ComputerUse.NativeHost
             return text;
         }
 
+        private static string ReadRequiredLiteralText(IDictionary<string, object> values, string key)
+        {
+            object value;
+            if (!values.TryGetValue(key, out value) || value == null)
+            {
+                throw NativeHostException.InvalidRequest("Native-host request is missing '" + key + "'.");
+            }
+
+            return value.ToString() ?? string.Empty;
+        }
+
         private static Dictionary<string, object> ReadOptionalDictionary(
             IDictionary<string, object> values,
             string key
@@ -162,6 +173,8 @@ namespace ComputerUse.NativeHost
         private const uint ProcessQueryLimitedInformation = 0x1000;
         private const uint DesktopSwitchDesktop = 0x0100;
         private const uint DesktopReadObjects = 0x0001;
+        private const uint GmemMoveable = 0x0002;
+        private const uint CfUnicodeText = 13;
         private const int D3dDriverTypeHardware = 1;
         private const int D3dDriverTypeWarp = 5;
         private const uint D3d11CreateDeviceBgraSupport = 0x20;
@@ -201,6 +214,9 @@ namespace ComputerUse.NativeHost
                     return null;
                 case "activateWindow":
                     ActivateWindow(GetWindowHandle(payload));
+                    return null;
+                case "sendText":
+                    SendText(ReadRequiredLiteralText(payload, "text"));
                     return null;
                 case "sendKeyboardInputs":
                     SendKeyboardInputs(GetKeyboardInputs(payload));
@@ -482,6 +498,51 @@ namespace ComputerUse.NativeHost
             });
         }
 
+        private void SendText(string text)
+        {
+            EnsureTurnInitialized();
+            ThrowIfInterrupted();
+
+            WithDpiGuard(delegate
+            {
+                if (string.IsNullOrEmpty(text))
+                {
+                    return;
+                }
+
+                var clipboard = CaptureClipboardSnapshot();
+                if (clipboard.FormatCount > 0 && !clipboard.HadUnicodeText)
+                {
+                    var details = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                    details["formatCount"] = clipboard.FormatCount;
+                    throw NativeHostException.NativeExecution(
+                        "OpenClipboard",
+                        "Clipboard currently contains non-text data that cannot be restored safely for exact text paste.",
+                        details
+                    );
+                }
+
+                try
+                {
+                    SetClipboardUnicodeText(text);
+                    Thread.Sleep(20);
+                    SendPasteShortcut();
+                    Thread.Sleep(20);
+                }
+                finally
+                {
+                    if (clipboard.HadUnicodeText)
+                    {
+                        TryRestoreClipboardUnicodeText(clipboard.Text ?? string.Empty);
+                    }
+                    else if (clipboard.FormatCount == 0)
+                    {
+                        TryClearClipboard();
+                    }
+                }
+            });
+        }
+
         private void SendPointerClick(PointerClickDto click)
         {
             EnsureTurnInitialized();
@@ -489,12 +550,7 @@ namespace ComputerUse.NativeHost
 
             WithDpiGuard(delegate
             {
-                if (!SetCursorPos(click.X, click.Y))
-                {
-                    ThrowLastWin32Error("SetCursorPos", "Failed to move the system cursor to the requested coordinates.");
-                }
-
-                Thread.Sleep(10);
+                MoveCursorHumanized(click.X, click.Y);
                 ThrowIfInterrupted();
 
                 uint downFlag;
@@ -542,6 +598,69 @@ namespace ComputerUse.NativeHost
                     }
                 }
             });
+        }
+
+        private void MoveCursorHumanized(int targetX, int targetY)
+        {
+            POINT start;
+            if (!GetCursorPos(out start))
+            {
+                if (!SetCursorPos(targetX, targetY))
+                {
+                    ThrowLastWin32Error("SetCursorPos", "Failed to move the system cursor to the requested coordinates.");
+                }
+
+                Thread.Sleep(18);
+                return;
+            }
+
+            var deltaX = (double)(targetX - start.x);
+            var deltaY = (double)(targetY - start.y);
+            var distance = Math.Sqrt((deltaX * deltaX) + (deltaY * deltaY));
+            if (distance < 2.0)
+            {
+                if (!SetCursorPos(targetX, targetY))
+                {
+                    ThrowLastWin32Error("SetCursorPos", "Failed to move the system cursor to the requested coordinates.");
+                }
+
+                Thread.Sleep(18);
+                return;
+            }
+
+            var steps = Math.Max(6, Math.Min(30, (int)Math.Ceiling(distance / 22.0)));
+            var durationMs = Math.Max(90, Math.Min(220, (int)Math.Round(80.0 + (distance * 0.35))));
+            var stepDelayMs = Math.Max(4, durationMs / steps);
+            var arcHeight = distance < 24.0 ? 0.0 : Math.Min(36.0, distance * 0.12);
+            var perpendicularX = (-1.0 * deltaY) / distance;
+            var perpendicularY = deltaX / distance;
+            var curveDirection =
+                ((deltaX >= 0.0 && deltaY >= 0.0) || (deltaX < 0.0 && deltaY < 0.0))
+                    ? 1.0
+                    : -1.0;
+
+            for (var step = 1; step <= steps; step++)
+            {
+                ThrowIfInterrupted();
+                var t = (double)step / steps;
+                var eased = 0.5 - (Math.Cos(Math.PI * t) / 2.0);
+                var arc = Math.Sin(Math.PI * t) * arcHeight * curveDirection;
+                var nextX = (int)Math.Round(start.x + (deltaX * eased) + (perpendicularX * arc));
+                var nextY = (int)Math.Round(start.y + (deltaY * eased) + (perpendicularY * arc));
+                if (!SetCursorPos(nextX, nextY))
+                {
+                    ThrowLastWin32Error("SetCursorPos", "Failed while animating the system cursor.");
+                }
+
+                Thread.Sleep(stepDelayMs);
+            }
+
+            if (!SetCursorPos(targetX, targetY))
+            {
+                ThrowLastWin32Error("SetCursorPos", "Failed to move the system cursor to the requested coordinates.");
+            }
+
+            Thread.Sleep(18);
         }
 
         private void SendPointerScroll(PointerScrollDto scroll)
@@ -2228,6 +2347,17 @@ namespace ComputerUse.NativeHost
             return text;
         }
 
+        private static string ReadRequiredLiteralText(IDictionary<string, object> values, string key)
+        {
+            object value;
+            if (!values.TryGetValue(key, out value) || value == null)
+            {
+                throw NativeHostException.InvalidRequest("Native-host payload is missing '" + key + "'.");
+            }
+
+            return value.ToString() ?? string.Empty;
+        }
+
         private static string ReadOptionalString(IDictionary<string, object> values, string key)
         {
             object value;
@@ -2489,6 +2619,166 @@ namespace ComputerUse.NativeHost
             }
         }
 
+        private static void SendPasteShortcut()
+        {
+            var nativeInputs = new[]
+            {
+                CreateKeyboardInput(0x11, 0, 0),
+                CreateKeyboardInput(0x56, 0, 0),
+                CreateKeyboardInput(0x56, 0, 0x0002),
+                CreateKeyboardInput(0x11, 0, 0x0002)
+            };
+
+            var sent = (int)SendInput((uint)nativeInputs.Length, nativeInputs, Marshal.SizeOf(typeof(INPUT)));
+            if (sent != nativeInputs.Length)
+            {
+                ThrowLastWin32Error("SendInput", "Failed to send the Ctrl+V paste shortcut.");
+            }
+        }
+
+        private static ClipboardSnapshot CaptureClipboardSnapshot()
+        {
+            OpenClipboardWithRetry();
+            try
+            {
+                var snapshot = new ClipboardSnapshot();
+                snapshot.FormatCount = CountClipboardFormats();
+                if (IsClipboardFormatAvailable(CfUnicodeText))
+                {
+                    snapshot.HadUnicodeText = true;
+                    snapshot.Text = ReadClipboardUnicodeTextUnsafe();
+                }
+
+                return snapshot;
+            }
+            finally
+            {
+                CloseClipboard();
+            }
+        }
+
+        private static string ReadClipboardUnicodeTextUnsafe()
+        {
+            var handle = GetClipboardData(CfUnicodeText);
+            if (handle == IntPtr.Zero)
+            {
+                ThrowLastWin32Error("GetClipboardData", "Failed to read Unicode text from the clipboard.");
+            }
+
+            var locked = GlobalLock(handle);
+            if (locked == IntPtr.Zero)
+            {
+                ThrowLastWin32Error("GlobalLock", "Failed to lock the clipboard text payload.");
+            }
+
+            try
+            {
+                return Marshal.PtrToStringUni(locked) ?? string.Empty;
+            }
+            finally
+            {
+                GlobalUnlock(handle);
+            }
+        }
+
+        private static void SetClipboardUnicodeText(string text)
+        {
+            OpenClipboardWithRetry();
+            IntPtr handle = IntPtr.Zero;
+            IntPtr locked = IntPtr.Zero;
+
+            try
+            {
+                if (!EmptyClipboard())
+                {
+                    ThrowLastWin32Error("EmptyClipboard", "Failed to clear the clipboard before pasting text.");
+                }
+
+                var bytes = Encoding.Unicode.GetBytes(text + '\0');
+                handle = GlobalAlloc(GmemMoveable, (UIntPtr)bytes.Length);
+                if (handle == IntPtr.Zero)
+                {
+                    ThrowLastWin32Error("GlobalAlloc", "Failed to allocate clipboard storage for pasted text.");
+                }
+
+                locked = GlobalLock(handle);
+                if (locked == IntPtr.Zero)
+                {
+                    ThrowLastWin32Error("GlobalLock", "Failed to lock clipboard storage for pasted text.");
+                }
+
+                Marshal.Copy(bytes, 0, locked, bytes.Length);
+                GlobalUnlock(handle);
+                locked = IntPtr.Zero;
+
+                if (SetClipboardData(CfUnicodeText, handle) == IntPtr.Zero)
+                {
+                    ThrowLastWin32Error("SetClipboardData", "Failed to publish pasted text to the clipboard.");
+                }
+
+                handle = IntPtr.Zero;
+            }
+            finally
+            {
+                if (locked != IntPtr.Zero)
+                {
+                    GlobalUnlock(handle);
+                }
+
+                if (handle != IntPtr.Zero)
+                {
+                    GlobalFree(handle);
+                }
+
+                CloseClipboard();
+            }
+        }
+
+        private static void TryRestoreClipboardUnicodeText(string text)
+        {
+            try
+            {
+                SetClipboardUnicodeText(text);
+            }
+            catch
+            {
+            }
+        }
+
+        private static void TryClearClipboard()
+        {
+            try
+            {
+                OpenClipboardWithRetry();
+                try
+                {
+                    EmptyClipboard();
+                }
+                finally
+                {
+                    CloseClipboard();
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void OpenClipboardWithRetry()
+        {
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                if (OpenClipboard(IntPtr.Zero))
+                {
+                    return;
+                }
+
+                Thread.Sleep(20);
+            }
+
+            ThrowLastWin32Error("OpenClipboard", "Failed to acquire the clipboard for text paste.");
+        }
+
         private static bool TrySwitchToInputDesktop()
         {
             var inputDesktop = OpenInputDesktop(0, false, DesktopSwitchDesktop | DesktopReadObjects);
@@ -2612,6 +2902,25 @@ namespace ComputerUse.NativeHost
             return CreateMouseInput(flags, 0, 0, 0);
         }
 
+        private static INPUT CreateKeyboardInput(ushort vkCode, ushort scanCode, uint flags)
+        {
+            return new INPUT
+            {
+                type = 1,
+                U = new INPUTUNION
+                {
+                    ki = new KEYBDINPUT
+                    {
+                        wVk = vkCode,
+                        wScan = scanCode,
+                        dwFlags = flags,
+                        time = 0,
+                        dwExtraInfo = UIntPtr.Zero
+                    }
+                }
+            };
+        }
+
         private static INPUT CreateMouseInput(uint flags, int mouseData)
         {
             return CreateMouseInput(flags, mouseData, 0, 0);
@@ -2702,7 +3011,31 @@ namespace ComputerUse.NativeHost
         private static extern uint SendInput(uint cInputs, INPUT[] pInputs, int cbSize);
 
         [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool OpenClipboard(IntPtr newOwner);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool CloseClipboard();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool EmptyClipboard();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr GetClipboardData(uint format);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetClipboardData(uint format, IntPtr memoryHandle);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool IsClipboardFormatAvailable(uint format);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int CountClipboardFormats();
+
+        [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetCursorPos(int x, int y);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool GetCursorPos(out POINT point);
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
@@ -2762,6 +3095,18 @@ namespace ComputerUse.NativeHost
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GlobalLock(IntPtr memoryHandle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GlobalUnlock(IntPtr memoryHandle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GlobalFree(IntPtr memoryHandle);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool CreateProcessW(
@@ -3014,6 +3359,13 @@ namespace ComputerUse.NativeHost
         public uint SourceThreadId { get; private set; }
 
         public uint TargetThreadId { get; private set; }
+    }
+
+    internal sealed class ClipboardSnapshot
+    {
+        public int FormatCount;
+        public bool HadUnicodeText;
+        public string Text;
     }
 
     internal sealed class AppDescriptorDto

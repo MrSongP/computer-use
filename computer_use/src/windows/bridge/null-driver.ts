@@ -61,6 +61,10 @@ export class NullNativeBridge implements NativeBridge {
     return metrics;
   }
 
+  async sendText(text: string): Promise<void> {
+    this.invocations.push({ name: "sendText", payload: text });
+  }
+
   async sendKeyboardInputs(inputs: readonly KeyboardInput[]): Promise<void> {
     this.invocations.push({ name: "sendKeyboardInputs", payload: inputs });
   }

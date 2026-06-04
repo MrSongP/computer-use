@@ -71,6 +71,7 @@ export interface NativeHostBridgeOptions {
   driverName?: string;
   fallback?: NativeBridge;
   projectPath?: string;
+  requestTimeoutMs?: number;
   sourcePath?: string;
   startupTimeoutMs?: number;
 }
@@ -104,6 +105,7 @@ export class NativeHostBridge implements NativeBridge {
   private readonly dotnetExecutable?: string;
   private readonly fallback: NativeBridge;
   private readonly projectPath: string;
+  private readonly requestTimeoutMs: number;
   private readonly sourcePath: string;
   private readonly startupTimeoutMs: number;
   private currentTurnMeta?: JsonRpcMeta;
@@ -125,6 +127,7 @@ export class NativeHostBridge implements NativeBridge {
     this.driverName = options.driverName ?? "native-host";
     this.fallback = options.fallback ?? new PowerShellNativeBridge();
     this.projectPath = options.projectPath ?? DEFAULT_PROJECT_PATH;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 20_000;
     this.sourcePath = options.sourcePath ?? DEFAULT_PROGRAM_PATH;
     this.startupTimeoutMs = options.startupTimeoutMs ?? 15_000;
   }
@@ -173,6 +176,13 @@ export class NativeHostBridge implements NativeBridge {
     return this.invokeOrFallback(
       () => this.invokePrimary("activateWindow", { window, meta: this.currentTurnMeta ?? null }),
       () => this.invokeFallback(() => this.fallback.activateWindow(window))
+    );
+  }
+
+  async sendText(text: string): Promise<void> {
+    return this.invokeOrFallback(
+      () => this.invokePrimary("sendText", { text, meta: this.currentTurnMeta ?? null }),
+      () => this.invokeFallback(() => this.fallback.sendText(text))
     );
   }
 
@@ -339,7 +349,11 @@ export class NativeHostBridge implements NativeBridge {
       }
 
       await this.activateFallback();
-      await fallback();
+      try {
+        await fallback();
+      } catch (fallbackError) {
+        throw combineFallbackFailure(normalized, fallbackError);
+      }
     }
   }
 
@@ -360,7 +374,11 @@ export class NativeHostBridge implements NativeBridge {
       }
 
       await this.activateFallback();
-      return await fallback();
+      try {
+        return await fallback();
+      } catch (fallbackError) {
+        throw combineFallbackFailure(normalized, fallbackError);
+      }
     }
   }
 
@@ -391,7 +409,36 @@ export class NativeHostBridge implements NativeBridge {
     const request: NativeHostRequest = { id, method, payload };
 
     return await new Promise<unknown>((resolve, reject) => {
-      this.pendingRequests.set(id, { resolve, reject });
+      let settled = false;
+      const finalize = <T>(callback: (value: T) => void) => (value: T) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timeoutHandle);
+        callback(value);
+      };
+      const timeoutHandle = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        this.pendingRequests.delete(id);
+        const stderrSuffix = formatStderrSuffix(this.stderrTail);
+        reject(
+          new NativeHostTransportError(
+            `Timed out waiting ${this.requestTimeoutMs}ms for native host response to '${method}'.${stderrSuffix}`
+          )
+        );
+        this.disposeHostProcess();
+      }, this.requestTimeoutMs);
+
+      this.pendingRequests.set(id, {
+        resolve: finalize(resolve),
+        reject: finalize(reject)
+      });
 
       const serialized = JSON.stringify(request);
       processHandle.stdin.write(`${serialized}\n`, "utf8", (writeError) => {
@@ -399,8 +446,15 @@ export class NativeHostBridge implements NativeBridge {
           return;
         }
 
+        const pending = this.pendingRequests.get(id);
         this.pendingRequests.delete(id);
-        reject(new NativeHostTransportError(`Failed to write ${method} to the native host: ${writeError.message}`));
+        if (!pending) {
+          return;
+        }
+
+        pending.reject(
+          new NativeHostTransportError(`Failed to write ${method} to the native host: ${writeError.message}`)
+        );
       });
     });
   }
@@ -768,6 +822,18 @@ function formatExecError(error: unknown): string {
 
 function normalizeUnknownError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function combineFallbackFailure(primaryError: Error, fallbackError: unknown): Error {
+  const normalizedFallback = normalizeUnknownError(fallbackError);
+  return new Error(
+    `${primaryError.message}\nFallback failed: ${normalizedFallback.message}`
+  );
+}
+
+function formatStderrSuffix(stderr: string): string {
+  const detail = stderr.trim();
+  return detail.length > 0 ? `\nstderr: ${detail}` : "";
 }
 
 function shouldFallback(error: Error): boolean {

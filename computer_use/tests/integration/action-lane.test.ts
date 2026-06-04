@@ -57,7 +57,7 @@ test("action lane dispatches press_key and type_text through the same runtime se
       "sendKeyboardInputs",
       "beginTurn",
       "activateWindow",
-      "sendKeyboardInputs"
+      "sendText"
     ]
   );
 });

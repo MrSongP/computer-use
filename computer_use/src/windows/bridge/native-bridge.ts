@@ -44,6 +44,7 @@ export interface NativeBridge {
   endTurn(): void;
   getVirtualScreenMetrics(): Promise<VirtualScreenMetrics>;
   activateWindow(window: WindowRef): Promise<void>;
+  sendText(text: string): Promise<void>;
   sendKeyboardInputs(inputs: readonly KeyboardInput[]): Promise<void>;
   sendPointerClick(click: PointerClick): Promise<void>;
   sendPointerScroll(scroll: PointerScroll): Promise<void>;

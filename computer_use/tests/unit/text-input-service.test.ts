@@ -37,6 +37,58 @@ test("TextInputService activates the window and emits unicode keydown/keyup pair
   ]);
 });
 
+test("TextInputService prefers whole-text injection when the bridge supports it", async () => {
+  const steps: string[] = [];
+  let recordedText = "";
+  const activationService = new WindowActivationService({
+    async activateWindow() {
+      steps.push("activate");
+    }
+  });
+  const service = new TextInputService(activationService, {
+    async sendText(text) {
+      steps.push("sendText");
+      recordedText = text;
+    },
+    async sendKeyboardInputs() {
+      steps.push("sendKeyboardInputs");
+    }
+  });
+
+  await service.typeText({
+    window: { id: 101, app: "demo.exe" },
+    text: "哈哈哈，骗你的，我还是 给你发 。"
+  });
+
+  assert.deepEqual(steps, ["activate", "sendText"]);
+  assert.equal(recordedText, "哈哈哈，骗你的，我还是 给你发 。");
+});
+
+test("TextInputService falls back to unicode keydown/keyup pairs when whole-text injection fails", async () => {
+  let recordedInputs: readonly KeyboardInput[] = [];
+  const activationService = new WindowActivationService({
+    async activateWindow() {}
+  });
+  const service = new TextInputService(activationService, {
+    async sendText() {
+      throw new Error("clipboard unavailable");
+    },
+    async sendKeyboardInputs(inputs) {
+      recordedInputs = [...inputs];
+    }
+  });
+
+  await service.typeText({
+    window: { id: 101, app: "demo.exe" },
+    text: "A"
+  });
+
+  assert.deepEqual(recordedInputs, [
+    { key: "A", vkCode: 0, scanCode: 0x41, flags: 0x0004 },
+    { key: "A", vkCode: 0, scanCode: 0x41, flags: 0x0006 }
+  ]);
+});
+
 test("TextInputService expands supplementary-plane characters into surrogate input pairs", async () => {
   let recordedInputs: readonly KeyboardInput[] = [];
   const activationService = new WindowActivationService({
