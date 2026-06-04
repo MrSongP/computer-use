@@ -263,10 +263,33 @@ export class NativeHostBridge implements NativeBridge {
   }
 
   async getWindowState(params: WindowStateParams): Promise<WindowStateResult> {
-    return await this.invokeOrFallbackWithResult<WindowStateResult>(
-      () => this.invokePrimaryResult<WindowStateResult>("getWindowState", { params, meta: this.currentTurnMeta ?? null }),
-      () => this.fallback.getWindowState(params)
-    );
+    if (this.fallbackActive) {
+      return await this.fallback.getWindowState(params);
+    }
+
+    try {
+      return await this.invokePrimaryResult<WindowStateResult>("getWindowState", {
+        params,
+        meta: this.currentTurnMeta ?? null
+      });
+    } catch (error) {
+      const normalized = normalizeUnknownError(error);
+      const partialResult = await this.retryWindowStateWithoutText(params, normalized);
+      if (partialResult) {
+        return partialResult;
+      }
+
+      if (!shouldFallback(normalized)) {
+        throw normalized;
+      }
+
+      await this.activateFallback();
+      try {
+        return await this.fallback.getWindowState(params);
+      } catch (fallbackError) {
+        throw combineFallbackFailure(normalized, fallbackError);
+      }
+    }
   }
 
   async clickElement(params: ClickElementParams): Promise<void> {
@@ -396,6 +419,42 @@ export class NativeHostBridge implements NativeBridge {
     }
   }
 
+  private async retryWindowStateWithoutText(
+    params: WindowStateParams,
+    primaryError: Error
+  ): Promise<WindowStateResult | null> {
+    if (!shouldRetryWindowStateWithoutText(primaryError, params)) {
+      return null;
+    }
+
+    const retryParams: WindowStateParams = {
+      ...params,
+      include_text: false
+    };
+
+    try {
+      const partialResult = await this.invokePrimaryResult<WindowStateResult>("getWindowState", {
+        params: retryParams,
+        meta: this.currentTurnMeta ?? null
+      });
+
+      partialResult.capture = {
+        ...partialResult.capture,
+        textRequested: true,
+        textSource: "uia_timeout",
+        elementsReturned: 0,
+        elementsTotal: 0,
+        elementsMatched: 0,
+        truncated: false,
+        partial: true
+      };
+
+      return partialResult;
+    } catch {
+      return null;
+    }
+  }
+
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const next = this.queued.then(task, task);
     this.queued = next.then(
@@ -501,12 +560,20 @@ export class NativeHostBridge implements NativeBridge {
     });
 
     child.once("error", (error) => {
+      if (this.hostProcess !== child) {
+        return;
+      }
+
       const wrapped = new NativeHostTransportError(`Native host process failed to start: ${error.message}`);
       this.failPendingRequests(wrapped);
       this.disposeHostProcess();
     });
 
     child.once("exit", (code, signal) => {
+      if (this.hostProcess !== child) {
+        return;
+      }
+
       const suffix = this.stderrTail.trim().length > 0 ? `\nstderr: ${this.stderrTail.trim()}` : "";
       const wrapped = new NativeHostTransportError(
         `Native host process exited unexpectedly (code=${code ?? "null"}, signal=${signal ?? "null"}).${suffix}`
@@ -603,6 +670,7 @@ export class NativeHostBridge implements NativeBridge {
     const processHandle = this.hostProcess;
     this.hostProcess = undefined;
     this.hostStartup = undefined;
+    this.turnStarted = false;
 
     if (processHandle && !processHandle.killed) {
       processHandle.kill();
@@ -872,6 +940,13 @@ function formatStderrSuffix(stderr: string): string {
 
 function shouldFallback(error: Error): boolean {
   return error instanceof NativeHostBuildError || error instanceof NativeHostTransportError;
+}
+
+function shouldRetryWindowStateWithoutText(
+  error: Error,
+  params: WindowStateParams
+): boolean {
+  return error instanceof NativeHostTransportError && params.include_text !== false;
 }
 
 export class NativeHostBuildError extends Error {

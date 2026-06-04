@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { NativeHostBridge } from "../../src/windows/bridge/native-host-driver.js";
+import {
+  NativeHostBridge,
+  NativeHostTransportError
+} from "../../src/windows/bridge/native-host-driver.js";
 import { NullNativeBridge } from "../../src/windows/bridge/null-driver.js";
 
 test("NativeHostBridge times out hung requests and falls back instead of hanging forever", async () => {
@@ -67,6 +70,97 @@ test("NativeHostBridge disposes the native-host process after endTurn flushes", 
   assert.deepEqual(methods, ["endTurn"]);
   assert.equal(fakeChild.killCalled, true);
   assert.equal((bridge as any).hostProcess, undefined);
+});
+
+test("NativeHostBridge retries getWindowState without text after a native-host timeout", async () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge()
+  });
+  const methods: Array<{ method: string; payload: Record<string, unknown> }> = [];
+  let invocationCount = 0;
+
+  (bridge as any).invokePrimaryResult = async (method: string, payload: Record<string, unknown>) => {
+    methods.push({ method, payload });
+    invocationCount += 1;
+
+    if (invocationCount === 1) {
+      throw new NativeHostTransportError(
+        "Timed out waiting 20000ms for native host response to 'getWindowState'."
+      );
+    }
+
+    return {
+      window: {
+        id: 68946,
+        app: "C:\\Program Files\\Tencent\\QQNT\\QQ.exe",
+        rect: { left: 0, top: 0, right: 640, bottom: 480 },
+        visible: true,
+        minimized: false,
+        focused: true
+      },
+      capture: {
+        screenshotRequested: false,
+        textRequested: false
+      }
+    };
+  };
+
+  const result = await bridge.getWindowState({
+    window: {
+      id: 68946,
+      app: "C:\\Program Files\\Tencent\\QQNT\\QQ.exe"
+    },
+    include_screenshot: false,
+    include_text: true,
+    max_elements: 20
+  });
+
+  assert.equal(methods.length, 2);
+  assert.deepEqual(methods[0]?.payload, {
+    params: {
+      window: {
+        id: 68946,
+        app: "C:\\Program Files\\Tencent\\QQNT\\QQ.exe"
+      },
+      include_screenshot: false,
+      include_text: true,
+      max_elements: 20
+    },
+    meta: null
+  });
+  assert.deepEqual(methods[1]?.payload, {
+    params: {
+      window: {
+        id: 68946,
+        app: "C:\\Program Files\\Tencent\\QQNT\\QQ.exe"
+      },
+      include_screenshot: false,
+      include_text: false,
+      max_elements: 20
+    },
+    meta: null
+  });
+  assert.deepEqual(result.capture, {
+    screenshotRequested: false,
+    textRequested: true,
+    textSource: "uia_timeout",
+    elementsReturned: 0,
+    elementsTotal: 0,
+    elementsMatched: 0,
+    truncated: false,
+    partial: true
+  });
+});
+
+test("NativeHostBridge clears turnStarted when the host process is disposed", () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge()
+  });
+
+  (bridge as any).turnStarted = true;
+  (bridge as any).disposeHostProcess();
+
+  assert.equal((bridge as any).turnStarted, false);
 });
 
 function createHungChild() {
