@@ -7,11 +7,10 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.WindowsRuntime;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
-using System.Web.Script.Serialization;
 using System.Windows.Automation;
 using Windows.Foundation;
 using Windows.Graphics.Capture;
@@ -29,10 +28,7 @@ namespace ComputerUse.NativeHost
             Console.InputEncoding = Encoding.UTF8;
             Console.OutputEncoding = Encoding.UTF8;
 
-            var serializer = new JavaScriptSerializer
-            {
-                MaxJsonLength = int.MaxValue
-            };
+            var serializer = new JsonBridge();
 
             var host = new NativeHostService();
             try
@@ -50,7 +46,7 @@ namespace ComputerUse.NativeHost
 
                     try
                     {
-                        request = serializer.Deserialize<Dictionary<string, object>>(line);
+                        request = serializer.DeserializeDictionary(line);
                         if (request == null)
                         {
                             throw NativeHostException.InvalidRequest("Request payload could not be decoded.");
@@ -93,9 +89,80 @@ namespace ComputerUse.NativeHost
             return 0;
         }
 
-        private static void WriteResponse(JavaScriptSerializer serializer, ResponseEnvelope response)
+        private static void WriteResponse(JsonBridge serializer, ResponseEnvelope response)
         {
             Console.WriteLine(serializer.Serialize(response.ToDictionary()));
+        }
+
+        private sealed class JsonBridge
+        {
+            private readonly JsonSerializerOptions options = new JsonSerializerOptions();
+
+            public Dictionary<string, object> DeserializeDictionary(string json)
+            {
+                using (var document = JsonDocument.Parse(json))
+                {
+                    var value = ConvertElement(document.RootElement) as Dictionary<string, object>;
+                    if (value == null)
+                    {
+                        throw NativeHostException.InvalidRequest("Request payload must be a JSON object.");
+                    }
+
+                    return value;
+                }
+            }
+
+            public string Serialize(object value)
+            {
+                return JsonSerializer.Serialize(value, options);
+            }
+
+            private static object ConvertElement(JsonElement element)
+            {
+                switch (element.ValueKind)
+                {
+                    case JsonValueKind.Object:
+                        var dictionary = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var property in element.EnumerateObject())
+                        {
+                            dictionary[property.Name] = ConvertElement(property.Value);
+                        }
+
+                        return dictionary;
+                    case JsonValueKind.Array:
+                        var array = new ArrayList();
+                        foreach (var item in element.EnumerateArray())
+                        {
+                            array.Add(ConvertElement(item));
+                        }
+
+                        return array;
+                    case JsonValueKind.String:
+                        return element.GetString();
+                    case JsonValueKind.Number:
+                        int intValue;
+                        if (element.TryGetInt32(out intValue))
+                        {
+                            return intValue;
+                        }
+
+                        long longValue;
+                        if (element.TryGetInt64(out longValue))
+                        {
+                            return longValue;
+                        }
+
+                        return element.GetDouble();
+                    case JsonValueKind.True:
+                        return true;
+                    case JsonValueKind.False:
+                        return false;
+                    case JsonValueKind.Null:
+                    case JsonValueKind.Undefined:
+                    default:
+                        return null;
+                }
+            }
         }
 
         private static int ReadRequiredInt(IDictionary<string, object> values, string key)
@@ -191,6 +258,7 @@ namespace ComputerUse.NativeHost
             "Progman",
             "Button",
             "Shell_TrayWnd",
+            "Shell_SecondaryTrayWnd",
             "Windows.UI.Core.CoreWindow",
             "ToolTips_Class32",
             "IME"
@@ -874,7 +942,13 @@ namespace ComputerUse.NativeHost
 
         private static IntPtr FindTaskbarWindow()
         {
-            return FindWindow("Shell_TrayWnd", null);
+            var primaryTaskbar = FindWindow("Shell_TrayWnd", null);
+            if (primaryTaskbar != IntPtr.Zero)
+            {
+                return primaryTaskbar;
+            }
+
+            return FindWindow("Shell_SecondaryTrayWnd", null);
         }
 
         private Dictionary<string, object> BuildTaskbarAppPayload(IntPtr hwnd)
@@ -1472,19 +1546,56 @@ namespace ComputerUse.NativeHost
 
         private GraphicsCaptureItem CreateGraphicsCaptureItemForWindow(IntPtr hwnd)
         {
-            var factory = WindowsRuntimeMarshal.GetActivationFactory(typeof(GraphicsCaptureItem));
-            var interop = (IGraphicsCaptureItemInterop)factory;
-            var iid = GraphicsCaptureItemGuid;
-            var itemPointer = interop.CreateForWindow(hwnd, ref iid);
+            IntPtr classNamePointer = IntPtr.Zero;
+            IntPtr factoryPointer = IntPtr.Zero;
+            IntPtr itemPointer = IntPtr.Zero;
             try
             {
-                return Marshal.GetObjectForIUnknown(itemPointer) as GraphicsCaptureItem;
+                var className = "Windows.Graphics.Capture.GraphicsCaptureItem";
+                var hr = WindowsCreateString(className, className.Length, out classNamePointer);
+                if (IsFailed(hr))
+                {
+                    throw NativeHostException.FromHResult(
+                        "WindowsCreateString",
+                        hr,
+                        "Failed to create the WinRT class name for WGC capture."
+                    );
+                }
+
+                var factoryGuid = typeof(IGraphicsCaptureItemInterop).GUID;
+                hr = RoGetActivationFactory(classNamePointer, ref factoryGuid, out factoryPointer);
+                if (IsFailed(hr))
+                {
+                    throw NativeHostException.FromHResult(
+                        "RoGetActivationFactory",
+                        hr,
+                        "Failed to resolve the GraphicsCaptureItem interop factory."
+                    );
+                }
+
+                var interop = (IGraphicsCaptureItemInterop)Marshal.GetObjectForIUnknown(factoryPointer);
+                var iid = GraphicsCaptureItemGuid;
+                hr = interop.CreateForWindow(hwnd, ref iid, out itemPointer);
+                if (IsFailed(hr))
+                {
+                    throw NativeHostException.FromHResult(
+                        "IGraphicsCaptureItemInterop.CreateForWindow",
+                        hr,
+                        "Failed to create a GraphicsCaptureItem for the target window."
+                    );
+                }
+
+                return GraphicsCaptureItem.FromAbi(itemPointer);
             }
             finally
             {
-                if (itemPointer != IntPtr.Zero)
+                if (factoryPointer != IntPtr.Zero)
                 {
-                    Marshal.Release(itemPointer);
+                    Marshal.Release(factoryPointer);
+                }
+                if (classNamePointer != IntPtr.Zero)
+                {
+                    WindowsDeleteString(classNamePointer);
                 }
             }
         }
@@ -3348,6 +3459,15 @@ namespace ComputerUse.NativeHost
         [DllImport("combase.dll")]
         private static extern void RoUninitialize();
 
+        [DllImport("combase.dll", CharSet = CharSet.Unicode)]
+        private static extern int WindowsCreateString(string sourceString, int length, out IntPtr hstring);
+
+        [DllImport("combase.dll")]
+        private static extern int WindowsDeleteString(IntPtr hstring);
+
+        [DllImport("combase.dll")]
+        private static extern int RoGetActivationFactory(IntPtr activatableClassId, ref Guid iid, out IntPtr factory);
+
         [DllImport("d3d11.dll", EntryPoint = "D3D11CreateDevice", CallingConvention = CallingConvention.StdCall)]
         private static extern int D3D11CreateDevice(
             IntPtr adapter,
@@ -3370,9 +3490,11 @@ namespace ComputerUse.NativeHost
         [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
         private interface IGraphicsCaptureItemInterop
         {
-            IntPtr CreateForWindow(IntPtr window, ref Guid iid);
+            [PreserveSig]
+            int CreateForWindow(IntPtr window, ref Guid iid, out IntPtr result);
 
-            IntPtr CreateForMonitor(IntPtr monitor, ref Guid iid);
+            [PreserveSig]
+            int CreateForMonitor(IntPtr monitor, ref Guid iid, out IntPtr result);
         }
     }
 

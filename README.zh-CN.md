@@ -1,0 +1,127 @@
+# computer_use
+
+[English](./README.md)
+
+`computer_use` 是一个面向 Codex 和 Claude Code 的本地 Windows computer-use 插件。它把窗口发现、窗口截图、UI Automation 文本树、鼠标/键盘输入、应用启动、turn lifecycle、中断处理和 trace evidence 统一到一套 TypeScript runtime 与 MCP server 里。插件根目录是 [`computer_use`](./computer_use/)，主要入口是 [`computer_use/.codex-plugin/plugin.json`](./computer_use/.codex-plugin/plugin.json)、[`computer_use/.mcp.json`](./computer_use/.mcp.json) 和 [`computer_use/skills/computer-use/SKILL.md`](./computer_use/skills/computer-use/SKILL.md)。
+
+## 快速开始
+
+要求：
+
+- Windows 10 或 Windows 11
+- Node.js 20+
+- 安装到 Codex 时需要 Codex CLI；安装到 Claude Code 时需要 Claude Code CLI
+- 编译 C# native host 需要 .NET SDK 8+
+- 只有不用 `dotnet build`、退回 .NET Framework `csc.exe` fallback 时，才需要 Windows 10/11 SDK 提供 `Windows.winmd`
+
+检查必需命令：
+
+```powershell
+node --version
+npm --version
+dotnet --info
+claude --version
+codex --version
+```
+
+如果 `dotnet --info` 没有列出 SDK，用 Windows Package Manager 安装 .NET SDK 8：
+
+```powershell
+winget install --id Microsoft.DotNet.SDK.8 --exact --accept-source-agreements --accept-package-agreements
+```
+
+如果安装后当前终端仍找不到 `dotnet`，请打开新终端，或确认 `C:\Program Files\dotnet` 已在 `PATH` 里。
+
+从仓库根目录安装到 Codex：
+
+```powershell
+cd D:\Desktop\computer-use
+npm run install:codex
+```
+
+安装到 Claude Code：
+
+```powershell
+cd D:\Desktop\computer-use
+npm run install:claude
+```
+
+两个都安装：
+
+```powershell
+npm run install:all
+```
+
+npm 安装入口会安装 TypeScript 依赖、编译 runtime、编译 C# native host、运行 MCP smoke test、注册本地 marketplace、安装插件，并运行 Node 版 doctor。
+
+## Native Host 编译
+
+只编译 C# Windows native host：
+
+```powershell
+npm run build:native
+```
+
+同时编译 TypeScript 和 C#：
+
+```powershell
+npm run build:all
+```
+
+如果已经完成编译，只想把当前产物一键安装：
+
+```powershell
+npm run install:codex:compiled
+npm run install:claude:compiled
+```
+
+native-host 编译器会优先通过 .NET SDK 8+ 使用 `dotnet build`。如果没有安装 `dotnet`，则退回 Windows .NET Framework 的 `csc.exe`，并动态扫描本机已安装的 Windows SDK `Windows.winmd`。
+
+如果 fallback 编译提示缺少 `Windows.winmd`，请安装 Windows 10/11 SDK，或把 `COMPUTER_USE_WINDOWS_WINMD_PATH` 设置为本机实际的 `Windows.winmd` 路径。
+
+## 能力
+
+- `list_apps`、`list_windows`、`get_window`、`launch_app`
+- `get_window_state`，包含截图和结构化 UIA 节点
+- `click`、`click_element`、`press_key`、`type_text`、`scroll`、`set_value`、`drag`、`perform_secondary_action`、`activate_window`
+- `end_turn`、turn lifecycle、物理 Escape 中断和 trace evidence
+- Codex adapter、Claude Code MCP adapter、Windows native-host bridge
+
+`launch_app` 默认会拦截重复冷启动。如果检测到已有会话，hook 会返回去 `windows.shell.taskbar` 恢复现有窗口的指引；只有显式 `force_new` 才会绕过。
+
+## 开发
+
+```powershell
+cd D:\Desktop\computer-use
+npm run typecheck
+npm test
+```
+
+常用专项验证：
+
+```powershell
+npm --prefix computer_use run test -- tests/integration/codex-adapter.test.ts
+npm --prefix computer_use run test -- tests/integration/claude-code-adapter.test.ts
+npm --prefix computer_use run test -- tests/integration/stdio-runtime.test.ts
+npm --prefix computer_use run test -- tests/integration/native-host-p5-smoke.test.ts
+npm run doctor:codex
+npm run doctor:claude
+```
+
+`computer_use/` 里的 `npm run codex:helper` 只用于本地 JSON-RPC helper 调试，不是 Codex 插件安装后的常规入口。
+
+## 文档
+
+- 项目 handoff：[doc/computer-use.md](./doc/computer-use.md)
+- 文档入口：[doc/README.md](./doc/README.md)
+- 架构 harness：[doc/harness/architecture.md](./doc/harness/architecture.md)
+- action lane harness：[doc/harness/action-lane.md](./doc/harness/action-lane.md)
+- 插件安装 harness：[doc/harness/plugin-installation.md](./doc/harness/plugin-installation.md)
+- 能力矩阵：[doc/acceptance/capability-matrix.md](./doc/acceptance/capability-matrix.md)
+
+## Windows 兼容说明
+
+- Windows 10 和 Windows 11 都是目标支持环境。
+- native-host 编译会扫描本机安装的 Windows SDK 版本，使用当前可用的 `Windows.winmd` 路径。
+- 任务栏目标优先使用 Win10/Win11 主任务栏，找不到时会退到 `Shell_SecondaryTrayWnd`，兼容 secondary taskbar 布局。
+- Windows UI 自动化会影响真实桌面状态，执行 action 工具前请保持目标窗口明确。

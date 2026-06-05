@@ -144,7 +144,7 @@ try {
 
   if (-not $SkipDoctor) {
     Write-Step "Running Claude install doctor"
-    Invoke-CheckedCommand -Executable "powershell" -Arguments @(
+    Invoke-CheckedCommand -Executable (Get-CurrentPowerShellExecutable) -Arguments @(
       "-ExecutionPolicy",
       "Bypass",
       "-File",

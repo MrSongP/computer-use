@@ -1,0 +1,25 @@
+{
+  "name": "computer-use-local",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Repository-level commands for the local Windows computer-use plugin.",
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix computer_use run build",
+    "build:all": "npm run build && npm run build:native",
+    "build:native": "node ./scripts/build-native-host.mjs",
+    "doctor:codex": "node ./scripts/install-plugin.mjs doctor codex",
+    "doctor:claude": "node ./scripts/install-plugin.mjs doctor claude",
+    "install:codex": "node ./scripts/install-plugin.mjs install codex",
+    "install:codex:compiled": "node ./scripts/install-plugin.mjs install codex --skip-build --skip-native",
+    "install:claude": "node ./scripts/install-plugin.mjs install claude",
+    "install:claude:compiled": "node ./scripts/install-plugin.mjs install claude --skip-build --skip-native",
+    "install:all": "npm run install:codex && npm run install:claude",
+    "install:all:compiled": "npm run install:codex:compiled && npm run install:claude:compiled",
+    "test": "npm --prefix computer_use test",
+    "typecheck": "npm --prefix computer_use run typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

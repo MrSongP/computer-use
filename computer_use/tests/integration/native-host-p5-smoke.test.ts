@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
@@ -13,7 +13,7 @@ const FRAMEWORK64_CSC_PATH = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.3031
 const FRAMEWORK32_CSC_PATH = "C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\csc.exe";
 const FRAMEWORK64_DIR = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319";
 const FRAMEWORK64_WPF_PATH = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\WPF";
-const WINDOWS_WINMD_PATH = "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata\\10.0.26100.0\\Windows.winmd";
+const WINDOWS_KITS_UNION_METADATA_DIR = "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata";
 const nativeHostSourcePath = path.resolve("native-host/ComputerUse.NativeHost/Program.cs");
 const smokeAppSourcePath = path.resolve("tests/fixtures/ComputerUse.P5SmokeApp.cs");
 
@@ -29,6 +29,12 @@ test("native host closes the P5 exit with real WGC and UIA smoke coverage", asyn
     return;
   }
 
+  const windowsWinMdPath = await resolveWindowsWinMdPath();
+  if (!windowsWinMdPath) {
+    t.skip("Windows.winmd not available");
+    return;
+  }
+
   const sandboxDir = await mkdtemp(path.join(tmpdir(), "computer-use-p5-smoke-"));
   const nativeHostExePath = path.join(sandboxDir, "ComputerUse.NativeHost.exe");
   const smokeAppExePath = path.join(sandboxDir, "ComputerUse.P5SmokeApp.exe");
@@ -36,7 +42,7 @@ test("native host closes the P5 exit with real WGC and UIA smoke coverage", asyn
   let smokeAppProcess: ChildProcessWithoutNullStreams | undefined;
 
   try {
-    await compileNativeHostExecutable(cscPath, nativeHostExePath);
+    await compileNativeHostExecutable(cscPath, windowsWinMdPath, nativeHostExePath);
     await compileSmokeApp(cscPath, smokeAppExePath);
 
     smokeAppProcess = spawn(smokeAppExePath, [], {
@@ -280,7 +286,11 @@ class NativeHostClient {
   }
 }
 
-async function compileNativeHostExecutable(cscPath: string, outputPath: string): Promise<void> {
+async function compileNativeHostExecutable(
+  cscPath: string,
+  windowsWinMdPath: string,
+  outputPath: string
+): Promise<void> {
   await execFileAsync(
     cscPath,
     [
@@ -295,7 +305,7 @@ async function compileNativeHostExecutable(cscPath: string, outputPath: string):
       `/r:${path.join(FRAMEWORK64_WPF_PATH, "UIAutomationClient.dll")}`,
       `/r:${path.join(FRAMEWORK64_WPF_PATH, "UIAutomationTypes.dll")}`,
       `/r:${path.join(FRAMEWORK64_WPF_PATH, "WindowsBase.dll")}`,
-      `/r:${WINDOWS_WINMD_PATH}`,
+      `/r:${windowsWinMdPath}`,
       nativeHostSourcePath
     ],
     {
@@ -330,6 +340,35 @@ async function resolveCscExecutable(): Promise<string | undefined> {
       return candidate;
     } catch {
       continue;
+    }
+  }
+
+  return undefined;
+}
+
+async function resolveWindowsWinMdPath(): Promise<string | undefined> {
+  const discoveredCandidates: string[] = [];
+  try {
+    const entries = await readdir(WINDOWS_KITS_UNION_METADATA_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && /^\d+\.\d+\.\d+\.\d+$/.test(entry.name)) {
+        discoveredCandidates.push(path.join(WINDOWS_KITS_UNION_METADATA_DIR, entry.name, "Windows.winmd"));
+      }
+    }
+  } catch {
+  }
+
+  const candidates = [
+    process.env.COMPUTER_USE_WINDOWS_WINMD_PATH,
+    ...discoveredCandidates.sort().reverse(),
+    path.join(WINDOWS_KITS_UNION_METADATA_DIR, "Facade", "Windows.WinMD")
+  ].filter((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0);
+
+  for (const candidate of candidates) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
     }
   }
 

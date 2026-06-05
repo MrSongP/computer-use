@@ -88,6 +88,19 @@ function Test-ComputerUseBuildArtifacts {
   return Test-Path $distEntrypoint
 }
 
+# Returns the path of the PowerShell executable that is currently running this
+# script. Used so child invocations (e.g. the doctor) keep using the same host
+# (powershell.exe on Windows PowerShell 5.1, pwsh.exe on PowerShell 7+) instead
+# of being pinned to a single edition. Detected via $PSVersionTable, which is
+# available in both 5.1 and 7+, so this is safe under Set-StrictMode.
+function Get-CurrentPowerShellExecutable {
+  $exeName = "powershell.exe"
+  if ($PSVersionTable.PSVersion.Major -ge 6) {
+    $exeName = "pwsh.exe"
+  }
+  return (Join-Path $PSHOME $exeName)
+}
+
 function Assert-ComputerUseFilesExist {
   foreach ($requiredPath in @(
     (Join-Path $script:ComputerUseRepoRoot ".claude-plugin\marketplace.json"),

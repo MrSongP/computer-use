@@ -35,7 +35,7 @@ Invoke-CheckedCommand -Executable "codex" -Arguments @("plugin", "add", $script:
 
 if (-not $SkipDoctor) {
   Write-Step "Running Codex install doctor"
-  Invoke-CheckedCommand -Executable "powershell" -Arguments @(
+  Invoke-CheckedCommand -Executable (Get-CurrentPowerShellExecutable) -Arguments @(
     "-ExecutionPolicy",
     "Bypass",
     "-File",
