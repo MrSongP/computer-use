@@ -12,7 +12,6 @@ Requirements:
 - Node.js 20+
 - Codex CLI for Codex installs, or Claude Code CLI for Claude installs
 - .NET SDK 8+ for the C# native host build
-- Windows 10/11 SDK only when using the .NET Framework `csc.exe` fallback instead of `dotnet build`
 
 Check the required command-line tools:
 
@@ -30,7 +29,7 @@ Install .NET SDK 8 with Windows Package Manager when `dotnet --info` does not li
 winget install --id Microsoft.DotNet.SDK.8 --exact --accept-source-agreements --accept-package-agreements
 ```
 
-If `dotnet` is not available in the current terminal after installation, open a new terminal or add `C:\Program Files\dotnet` to `PATH`.
+If `dotnet` is not available in the current terminal after installation, the installer also checks `C:\Program Files\dotnet\dotnet.exe`. If that file is missing, open a new terminal after installing the SDK or add `C:\Program Files\dotnet` to `PATH`.
 
 Install into Codex from the repository root:
 
@@ -75,11 +74,9 @@ npm run install:codex:compiled
 npm run install:claude:compiled
 ```
 
-The native-host builder prefers `dotnet build` through .NET SDK 8+. If `dotnet` is not installed, it falls back to the Windows .NET Framework `csc.exe` path and discovers the installed Windows SDK `Windows.winmd` dynamically.
+The native-host builder uses `dotnet build` through .NET SDK 8+. It checks `PATH`, `COMPUTER_USE_DOTNET_PATH`, and the standard Windows install locations for `dotnet.exe`.
 
 The .NET build targets `net8.0-windows10.0.19041.0` so the native host can consume the Windows SDK C#/WinRT projections used by `Windows.Graphics.Capture`. Keep the TypeScript native-host launch path in sync with that target framework when changing the project file.
-
-If the fallback compiler reports that `Windows.winmd` is missing, install the Windows 10/11 SDK or set `COMPUTER_USE_WINDOWS_WINMD_PATH` to the exact `Windows.winmd` path on that machine.
 
 ## Capabilities
 
@@ -124,6 +121,6 @@ npm run doctor:claude
 ## Windows Notes
 
 - Windows 10 and Windows 11 are both supported targets.
-- The native-host builder scans installed Windows SDK versions for the active `Windows.winmd` path.
+- The native-host builder runs through .NET SDK 8+ and automatically checks the standard Windows `dotnet.exe` install path.
 - The taskbar target supports the primary Win10/Win11 taskbar and falls back to `Shell_SecondaryTrayWnd` for secondary-taskbar layouts.
 - Windows UI automation can affect the real desktop state, so keep target windows clear before running action tools.

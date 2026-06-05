@@ -12,7 +12,6 @@
 - Node.js 20+
 - 安装到 Codex 时需要 Codex CLI；安装到 Claude Code 时需要 Claude Code CLI
 - 编译 C# native host 需要 .NET SDK 8+
-- 只有不用 `dotnet build`、退回 .NET Framework `csc.exe` fallback 时，才需要 Windows 10/11 SDK 提供 `Windows.winmd`
 
 检查必需命令：
 
@@ -30,7 +29,7 @@ codex --version
 winget install --id Microsoft.DotNet.SDK.8 --exact --accept-source-agreements --accept-package-agreements
 ```
 
-如果安装后当前终端仍找不到 `dotnet`，请打开新终端，或确认 `C:\Program Files\dotnet` 已在 `PATH` 里。
+如果安装后当前终端仍找不到 `dotnet`，安装器还会检查 `C:\Program Files\dotnet\dotnet.exe`。如果这个文件也不存在，请打开新终端，或确认 `C:\Program Files\dotnet` 已在 `PATH` 里。
 
 从仓库根目录安装到 Codex：
 
@@ -75,11 +74,9 @@ npm run install:codex:compiled
 npm run install:claude:compiled
 ```
 
-native-host 编译器会优先通过 .NET SDK 8+ 使用 `dotnet build`。如果没有安装 `dotnet`，则退回 Windows .NET Framework 的 `csc.exe`，并动态扫描本机已安装的 Windows SDK `Windows.winmd`。
+native-host 编译器会通过 .NET SDK 8+ 使用 `dotnet build`，并会依次检查 `PATH`、`COMPUTER_USE_DOTNET_PATH` 和 Windows 标准安装位置里的 `dotnet.exe`。
 
 当前 .NET build 目标框架是 `net8.0-windows10.0.19041.0`，用于启用 `Windows.Graphics.Capture` 所需的 Windows SDK C#/WinRT projections。如果修改 native host 的目标框架，需要同步更新 `computer_use/src/windows/bridge/native-host-driver.ts` 里的 native-host 启动路径常量。
-
-如果 fallback 编译提示缺少 `Windows.winmd`，请安装 Windows 10/11 SDK，或把 `COMPUTER_USE_WINDOWS_WINMD_PATH` 设置为本机实际的 `Windows.winmd` 路径。
 
 ## 能力
 
@@ -124,6 +121,6 @@ npm run doctor:claude
 ## Windows 兼容说明
 
 - Windows 10 和 Windows 11 都是目标支持环境。
-- native-host 编译会扫描本机安装的 Windows SDK 版本，使用当前可用的 `Windows.winmd` 路径。
+- native-host 编译通过 .NET SDK 8+ 执行，并会自动检查 Windows 标准 `dotnet.exe` 安装路径。
 - 任务栏目标优先使用 Win10/Win11 主任务栏，找不到时会退到 `Shell_SecondaryTrayWnd`，兼容 secondary taskbar 布局。
 - Windows UI 自动化会影响真实桌面状态，执行 action 工具前请保持目标窗口明确。

@@ -1,6 +1,6 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readdir, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -24,21 +24,10 @@ import { PowerShellNativeBridge } from "./powershell-driver.js";
 const execFileAsync = promisify(execFile);
 const DEFAULT_BUILD_CONFIGURATION = "Release";
 const NATIVE_HOST_TARGET_FRAMEWORK = "net8.0-windows10.0.19041.0";
-const FRAMEWORK64_CSC_PATH = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe";
-const FRAMEWORK32_CSC_PATH = "C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\csc.exe";
-const FRAMEWORK64_WPF_PATH = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\WPF";
-const FRAMEWORK32_WPF_PATH = "C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\WPF";
-const FRAMEWORK64_DIR = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319";
-const FRAMEWORK32_DIR = "C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319";
-const WINDOWS_KITS_UNION_METADATA_DIR = "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata";
-const WINDOWS_WINMD_CANDIDATES = [
-  process.env.COMPUTER_USE_WINDOWS_WINMD_PATH,
-  "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata\\10.0.26100.0\\Windows.winmd",
-  "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata\\10.0.22621.0\\Windows.winmd",
-  "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata\\10.0.19041.0\\Windows.winmd",
-  "C:\\Program Files (x86)\\Windows Kits\\10\\UnionMetadata\\Facade\\Windows.WinMD",
-  "C:\\Program Files (x86)\\Windows Kits\\8.1\\References\\CommonConfiguration\\Neutral\\Annotated\\Windows.winmd"
-] as const satisfies readonly (string | undefined)[];
+const DEFAULT_WINDOWS_DOTNET_PATHS = [
+  "C:\\Program Files\\dotnet\\dotnet.exe",
+  "C:\\Program Files (x86)\\dotnet\\dotnet.exe"
+] as const;
 const DEFAULT_PROJECT_PATH = resolveNativeHostPath(
   "../../../native-host/ComputerUse.NativeHost/ComputerUse.NativeHost.csproj",
   "../../../../native-host/ComputerUse.NativeHost/ComputerUse.NativeHost.csproj"
@@ -702,7 +691,6 @@ export class NativeHostBridge implements NativeBridge {
 interface NativeHostAssemblyOptions {
   buildConfiguration: string;
   buildTimeoutMs: number;
-  cscExecutable?: string;
   dotnetExecutable?: string;
   projectPath: string;
   sourcePath: string;
@@ -714,75 +702,35 @@ interface NativeHostLaunchSpec {
 }
 
 async function ensureNativeHostAssembly(options: NativeHostAssemblyOptions): Promise<NativeHostLaunchSpec> {
-  const executablePath = getNativeHostExecutablePath(options.projectPath, options.buildConfiguration);
-  if (!(await shouldBuildNativeHost(executablePath, options.projectPath, options.sourcePath))) {
-    return {
-      command: executablePath,
-      args: []
-    };
-  }
-
-  const dotnetExecutable = await resolveCommand(
-    options.dotnetExecutable ?? process.env.COMPUTER_USE_DOTNET_PATH ?? "dotnet"
-  );
-  if (dotnetExecutable) {
-    const assemblyPath = getNativeHostAssemblyPath(options.projectPath, options.buildConfiguration);
-    if (await shouldBuildNativeHost(assemblyPath, options.projectPath, options.sourcePath)) {
-      try {
-        await execFileAsync(
-          dotnetExecutable,
-          ["build", options.projectPath, "-c", options.buildConfiguration, "--nologo"],
-          {
-            cwd: path.dirname(options.projectPath),
-            timeout: options.buildTimeoutMs,
-            windowsHide: true
-          }
-        );
-      } catch (error) {
-        throw new NativeHostBuildError(`Failed to build the native host: ${formatExecError(error)}`);
-      }
-    }
-
-    return {
-      command: dotnetExecutable,
-      args: [assemblyPath]
-    };
-  }
-
-  const cscExecutable = await resolveCscExecutable(options.cscExecutable);
-  if (!cscExecutable) {
+  const dotnetExecutable = await resolveDotnetCommand(options.dotnetExecutable ?? process.env.COMPUTER_USE_DOTNET_PATH);
+  if (!dotnetExecutable) {
     throw new NativeHostBuildError(
-      "Failed to build the native host: neither dotnet nor .NET Framework csc.exe was found. " +
-      "Run npm run build:native after installing .NET SDK 8+, or set COMPUTER_USE_DOTNET_PATH / COMPUTER_USE_CSC_PATH."
+      "Failed to build the native host: .NET SDK 8+ was not found. " +
+      "Install Microsoft.DotNet.SDK.8, add dotnet to PATH, or set COMPUTER_USE_DOTNET_PATH to " +
+      "C:\\Program Files\\dotnet\\dotnet.exe."
     );
   }
 
-  await mkdir(path.dirname(executablePath), { recursive: true });
-
-  try {
-    await compileNativeHostWithCsc(cscExecutable, executablePath, options);
-  } catch (error) {
-    const fallbackExecutablePath = getFallbackNativeHostExecutablePath(
-      options.projectPath,
-      options.buildConfiguration
-    );
+  const assemblyPath = getNativeHostAssemblyPath(options.projectPath, options.buildConfiguration);
+  if (await shouldBuildNativeHost(assemblyPath, options.projectPath, options.sourcePath)) {
     try {
-      await compileNativeHostWithCsc(cscExecutable, fallbackExecutablePath, options);
-      return {
-        command: fallbackExecutablePath,
-        args: []
-      };
-    } catch (fallbackError) {
-      throw new NativeHostBuildError(
-        `Failed to compile the native host with csc.exe: ${formatExecError(error)}` +
-        `\nFallback compile failed: ${formatExecError(fallbackError)}`
+      await execFileAsync(
+        dotnetExecutable,
+        ["build", options.projectPath, "-c", options.buildConfiguration, "--nologo"],
+        {
+          cwd: path.dirname(options.projectPath),
+          timeout: options.buildTimeoutMs,
+          windowsHide: true
+        }
       );
+    } catch (error) {
+      throw new NativeHostBuildError(`Failed to build the native host: ${formatExecError(error)}`);
     }
   }
 
   return {
-    command: executablePath,
-    args: []
+    command: dotnetExecutable,
+    args: [assemblyPath]
   };
 }
 
@@ -814,44 +762,6 @@ function getNativeHostAssemblyPath(projectPath: string, buildConfiguration: stri
   );
 }
 
-function getNativeHostExecutablePath(projectPath: string, buildConfiguration: string): string {
-  return path.join(path.dirname(projectPath), "bin", buildConfiguration, "ComputerUse.NativeHost.exe");
-}
-
-function getFallbackNativeHostExecutablePath(projectPath: string, buildConfiguration: string): string {
-  return path.join(
-    path.dirname(projectPath),
-    "bin",
-    buildConfiguration,
-    `ComputerUse.NativeHost.${process.pid}.${Date.now()}.exe`
-  );
-}
-
-async function compileNativeHostWithCsc(
-  cscExecutable: string,
-  executablePath: string,
-  options: NativeHostAssemblyOptions
-): Promise<void> {
-  const references = await resolveCscReferences();
-  await execFileAsync(
-    cscExecutable,
-    [
-      "/nologo",
-      "/target:exe",
-      `/out:${executablePath}`,
-      "/r:System.Web.Extensions.dll",
-      "/r:System.Drawing.dll",
-      ...references.map((reference) => `/r:${reference}`),
-      options.sourcePath
-    ],
-    {
-      cwd: path.dirname(options.projectPath),
-      timeout: options.buildTimeoutMs,
-      windowsHide: true
-    }
-  );
-}
-
 function resolveNativeHostPath(...relativeCandidates: readonly string[]): string {
   for (const candidate of relativeCandidates) {
     const resolved = fileURLToPath(new URL(candidate, import.meta.url));
@@ -863,105 +773,21 @@ function resolveNativeHostPath(...relativeCandidates: readonly string[]): string
   return fileURLToPath(new URL(relativeCandidates[0]!, import.meta.url));
 }
 
-async function resolveCscExecutable(preferred?: string): Promise<string | undefined> {
+async function resolveDotnetCommand(preferred?: string): Promise<string | undefined> {
   const candidates = [
     preferred,
-    process.env.COMPUTER_USE_CSC_PATH,
-    FRAMEWORK64_CSC_PATH,
-    FRAMEWORK32_CSC_PATH
+    "dotnet",
+    ...(process.platform === "win32" ? DEFAULT_WINDOWS_DOTNET_PATHS : [])
   ].filter((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0);
 
   for (const candidate of candidates) {
-    try {
-      await stat(candidate);
-      return candidate;
-    } catch {
-      continue;
+    const resolved = await resolveCommand(candidate);
+    if (resolved) {
+      return resolved;
     }
   }
 
   return undefined;
-}
-
-async function resolveCscReferences(): Promise<readonly string[]> {
-  const frameworkCandidates = [
-    { frameworkDir: FRAMEWORK64_DIR, wpfDir: FRAMEWORK64_WPF_PATH },
-    { frameworkDir: FRAMEWORK32_DIR, wpfDir: FRAMEWORK32_WPF_PATH }
-  ];
-  const windowsWinMd = await resolveFirstExistingPath(await resolveWindowsWinMdCandidates());
-
-  for (const candidate of frameworkCandidates) {
-    const references = [
-      path.join(candidate.frameworkDir, "System.Runtime.dll"),
-      path.join(candidate.frameworkDir, "System.Runtime.InteropServices.WindowsRuntime.dll"),
-      path.join(candidate.frameworkDir, "System.Runtime.WindowsRuntime.dll"),
-      path.join(candidate.wpfDir, "UIAutomationClient.dll"),
-      path.join(candidate.wpfDir, "UIAutomationTypes.dll"),
-      path.join(candidate.wpfDir, "WindowsBase.dll"),
-      windowsWinMd
-    ].filter((reference): reference is string => typeof reference === "string" && reference.length > 0);
-
-    if (await allFilesExist(references)) {
-      return references;
-    }
-  }
-
-  return [
-    "System.Runtime.dll",
-    "System.Runtime.InteropServices.WindowsRuntime.dll",
-    "System.Runtime.WindowsRuntime.dll",
-    "UIAutomationClient.dll",
-    "UIAutomationTypes.dll",
-    "WindowsBase.dll",
-    "Windows.winmd"
-  ];
-}
-
-async function allFilesExist(files: readonly string[]): Promise<boolean> {
-  for (const file of files) {
-    try {
-      await stat(file);
-    } catch {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-async function resolveFirstExistingPath(candidates: readonly string[]): Promise<string | undefined> {
-  for (const candidate of candidates) {
-    try {
-      await stat(candidate);
-      return candidate;
-    } catch {
-      continue;
-    }
-  }
-
-  return undefined;
-}
-
-async function resolveWindowsWinMdCandidates(): Promise<readonly string[]> {
-  const discoveredCandidates: string[] = [];
-  try {
-    const entries = await readdir(WINDOWS_KITS_UNION_METADATA_DIR, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory() && /^\d+\.\d+\.\d+\.\d+$/.test(entry.name)) {
-        discoveredCandidates.push(path.join(WINDOWS_KITS_UNION_METADATA_DIR, entry.name, "Windows.winmd"));
-      }
-    }
-  } catch {
-    // Keep the static fallbacks below when the Windows SDK directory is absent.
-  }
-
-  discoveredCandidates.sort().reverse();
-  return [
-    ...discoveredCandidates,
-    ...WINDOWS_WINMD_CANDIDATES.filter((candidate): candidate is string =>
-      typeof candidate === "string" && candidate.length > 0
-    )
-  ];
 }
 
 async function resolveCommand(command: string): Promise<string | undefined> {

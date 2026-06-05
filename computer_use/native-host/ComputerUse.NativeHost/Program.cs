@@ -18,6 +18,7 @@ using Windows.Graphics.DirectX;
 using Windows.Graphics.DirectX.Direct3D11;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
+using WinRT;
 
 namespace ComputerUse.NativeHost
 {
@@ -1521,8 +1522,14 @@ namespace ComputerUse.NativeHost
             {
                 return CaptureWindowJpegWithWindowsGraphicsCapture(hwnd, jpegQuality);
             }
-            catch
+            catch (Exception wgcError)
             {
+                Console.Error.WriteLine($"[WGC-DIAG] suppressed WGC failure: type={wgcError.GetType().FullName} hwnd={hwnd.ToInt64()} msg={wgcError.Message}");
+                if (wgcError.InnerException != null)
+                {
+                    Console.Error.WriteLine($"[WGC-DIAG]   inner: {wgcError.InnerException.GetType().FullName}: {wgcError.InnerException.Message}");
+                }
+                Console.Error.WriteLine($"[WGC-DIAG]   stack: {wgcError.StackTrace}");
                 return null;
             }
         }
@@ -1605,11 +1612,14 @@ namespace ComputerUse.NativeHost
                 }
                 if (device != null)
                 {
-                    Marshal.ReleaseComObject(device);
-                }
-                if (item != null)
-                {
-                    Marshal.ReleaseComObject(item);
+                    if (Marshal.IsComObject(device))
+                    {
+                        Marshal.ReleaseComObject(device);
+                    }
+                    else
+                    {
+                        device.Dispose();
+                    }
                 }
 
                 frameReady.Dispose();
@@ -1747,7 +1757,7 @@ namespace ComputerUse.NativeHost
                     );
                 }
 
-                var device = Marshal.GetObjectForIUnknown(inspectablePointer) as IDirect3DDevice;
+                var device = MarshalInterface<IDirect3DDevice>.FromAbi(inspectablePointer);
                 if (device == null)
                 {
                     throw NativeHostException.NativeExecution(

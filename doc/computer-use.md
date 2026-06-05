@@ -12,10 +12,10 @@
 - trace/debug 已经收敛为共享能力，可通过 env、runtime config 或 request meta 开关。
 - `launch_app` 现在默认是 policy hook：发现已有实例时会拒绝重复冷启动，并返回“转去任务栏/托盘恢复现有会话”的 guidance；只有显式要求时才应该 `force_new`。
 - `list_apps` 会额外暴露 `windows.shell.taskbar`，作为 taskbar/notification area 的正式截图与点击目标。
-- 插件根目录是 `G:\Desktop\computer_use\computer_use`，不是根目录 `scripts` 下的官方兼容客户端包装。
-- Claude Code 安装入口是 repo-local marketplace：`G:\Desktop\computer_use\.claude-plugin\marketplace.json`。
+- 插件根目录是 `D:\Desktop\computer-use\computer_use`，不是根目录 `scripts` 下的官方兼容客户端包装。
+- Claude Code 安装入口是 repo-local marketplace：`D:\Desktop\computer-use\.claude-plugin\marketplace.json`。
 - Claude Code 的用户级权限入口是：`%USERPROFILE%\.claude\settings.json`。安装脚本会把 `mcp__plugin_computer-use_computer-use` 合并进去，避免 `computer-use` MCP 工具每一步都要求点 `Yes`。
-- Codex 安装入口是 repo-local marketplace：`G:\Desktop\computer_use\.agents\plugins\marketplace.json`。
+- Codex 安装入口是 repo-local marketplace：`D:\Desktop\computer-use\.agents\plugins\marketplace.json`。
 
 ## 2. 安装与使用入口
 
@@ -24,22 +24,22 @@ Claude Code 与 Codex 分开安装。
 Claude Code：
 
 ```powershell
-cd G:\Desktop\computer_use
-powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code.ps1
+cd D:\Desktop\computer-use
+npm run install:claude
 ```
 
 Codex：
 
 ```powershell
-cd G:\Desktop\computer_use
-powershell -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
+cd D:\Desktop\computer-use
+npm run install:codex
 ```
 
-`install-claude-code.ps1` 会注册 Claude marketplace、重装 `computer-use@computer-use-local`，并提示你在当前会话执行 `/reload-plugins` 或开新会话。
+`npm run install:claude` 会安装 TypeScript 依赖、编译 runtime、编译 C# native host、验证 Claude marketplace 和 plugin manifest、运行 MCP smoke test、注册 Claude marketplace、重装 `computer-use@computer-use-local`，并提示你在当前会话执行 `/reload-plugins` 或开新会话。
 
-脚本还会自动更新用户级 `~/.claude/settings.json`，把 `mcp__plugin_computer-use_computer-use` 加入 allowlist，所以不依赖 Claude Code 从哪个目录启动。
+安装器还会自动更新用户级 `~/.claude/settings.json`，把 `mcp__plugin_computer-use_computer-use` 加入 allowlist，所以不依赖 Claude Code 从哪个目录启动。
 
-`install-codex.ps1` 会注册 Codex marketplace、重装 `computer-use@computer-use-local`，并提示你开新线程验证 skill 与 MCP tools 是否加载。
+`npm run install:codex` 会注册 Codex marketplace、重装 `computer-use@computer-use-local`，并提示你开新线程验证 skill 与 MCP tools 是否加载。
 
 安装后的正常入口：
 
@@ -80,7 +80,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
 
 ## 5. 验证入口
 
-项目实现根：`G:\Desktop\computer_use\computer_use`
+项目实现根：`D:\Desktop\computer-use\computer_use`
 
 常用验证命令：
 
@@ -91,8 +91,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
 - `npx tsx --test tests/integration/native-host-p5-smoke.test.ts`
 - `npx tsx --test tests/integration/stdio-runtime.test.ts`
 - `node .\scripts\smoke-claude-mcp.mjs`
-- `powershell -ExecutionPolicy Bypass -File .\scripts\doctor-computer-use.ps1 -Target Claude`
-- `powershell -ExecutionPolicy Bypass -File .\scripts\doctor-computer-use.ps1 -Target Codex`
+- `npm run doctor:claude`
+- `npm run doctor:codex`
 
 ## 6. 为什么文档被收缩
 

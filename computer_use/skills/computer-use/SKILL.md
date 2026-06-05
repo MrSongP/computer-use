@@ -13,7 +13,7 @@ Before using this skill for the first time in the current conversation context, 
 
 ## Project Version Notes
 
-For this repository, the plugin implementation lives under `G:\Desktop\computer_use\computer_use`.
+For this repository, the plugin implementation lives under `D:\Desktop\computer-use\computer_use`.
 
 - Treat `computer_use\` as the actual plugin root for this project version. Its key files are `.codex-plugin\plugin.json`, `.claude-plugin\plugin.json`, `.mcp.json`, `skills\computer-use\SKILL.md`, and the adapter entrypoints under `src\adapters\`.
 - For normal Windows automation work, use the MCP tools exposed by this local plugin. Do not import the upstream bundled-client package, do not bootstrap the official OpenAI compatibility client, and do not route through repository wrapper scripts.
@@ -40,7 +40,7 @@ If the local tools are not exposed:
 
 - First check whether the `computer-use` plugin is installed and enabled for the current Codex thread.
 - Start a new thread after installing or reinstalling the plugin; that is the reliable boundary for loading new skills and MCP tools.
-- For repo-local installation, the marketplace entry is documented in this repository's README and points at `G:\Desktop\computer_use\computer_use`.
+- For repo-local installation, the marketplace entry is documented in this repository's README and points at `D:\Desktop\computer-use\computer_use`.
 - Do not fall back to the upstream bundled-client path. That path is not the integration contract for this project.
 - If you are only debugging the adapter process, `npm run codex:helper` can start the local JSON-RPC helper, but that is a development harness, not the normal skill workflow.
 

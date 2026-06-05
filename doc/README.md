@@ -14,6 +14,7 @@
 8. `harness/architecture.md`
 9. `harness/action-lane.md`
 10. `harness/plugin-installation.md`
+11. `harness/wgc-capture-bug.md` — WGC 抓帧降级 GDI 的根因与修复方向（持续参考）
 
 ## 保留原则
 
@@ -25,11 +26,11 @@
 
 ## 代码主入口
 
-- 项目实现根：`G:\Desktop\computer_use\computer_use`
-- Codex plugin manifest：`G:\Desktop\computer_use\computer_use\.codex-plugin\plugin.json`
-- 本地 marketplace：`G:\Desktop\computer_use\.agents\plugins\marketplace.json`
-- 共享核心：`G:\Desktop\computer_use\computer_use\src\core`
-- Windows 实现：`G:\Desktop\computer_use\computer_use\src\windows`
-- 双宿主适配：`G:\Desktop\computer_use\computer_use\src\adapters`
-- native host：`G:\Desktop\computer_use\computer_use\native-host\ComputerUse.NativeHost`
-- 测试：`G:\Desktop\computer_use\computer_use\tests`
+- 项目实现根：`D:\Desktop\computer-use\computer_use`
+- Codex plugin manifest：`D:\Desktop\computer-use\computer_use\.codex-plugin\plugin.json`
+- 本地 marketplace：`D:\Desktop\computer-use\.agents\plugins\marketplace.json`
+- 共享核心：`D:\Desktop\computer-use\computer_use\src\core`
+- Windows 实现：`D:\Desktop\computer-use\computer_use\src\windows`
+- 双宿主适配：`D:\Desktop\computer-use\computer_use\src\adapters`
+- native host：`D:\Desktop\computer-use\computer_use\native-host\ComputerUse.NativeHost`
+- 测试：`D:\Desktop\computer-use\computer_use\tests`

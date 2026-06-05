@@ -13,7 +13,6 @@
 - skill：`computer_use\skills\computer-use\SKILL.md`
 - repo-local marketplace：`.agents\plugins\marketplace.json`
 - 推荐安装入口：根目录 `npm run install:codex`、`npm run install:claude`
-- 兼容安装入口：`scripts\install-claude-code.ps1`、`scripts\install-codex.ps1`
 
 当前 `launch_app` 的长期语义也要一起记住：默认不是“每次都冷启动”，也不是 runtime 直接帮你恢复各种程序界面；它会在检测到已有实例时通过 hook 拒绝重复启动，并把“去 `windows.shell.taskbar` 截图/点击已有图标恢复”的 guidance 返回给模型。只有显式要求新实例时才应走 `force_new`。
 
@@ -27,7 +26,6 @@
 - Node.js 20+
 - 安装到 Codex 时需要 Codex CLI；安装到 Claude Code 时需要 Claude Code CLI
 - 编译 C# native host 需要 .NET SDK 8+
-- 只有不用 `dotnet build`、退回 Windows .NET Framework `csc.exe` fallback 时，才需要 Windows 10/11 SDK 提供 `Windows.winmd`
 
 依赖检查：
 
@@ -99,28 +97,16 @@ npm run install:codex:compiled
 npm run install:claude:compiled
 ```
 
-native-host 编译顺序：
+native-host 编译路径：
 
-1. 优先使用 `dotnet build`。
-2. 如果没有 .NET SDK，则退回 Windows .NET Framework `csc.exe`。
-3. `Windows.winmd` 会从本机 Windows Kits 目录动态扫描，避免 Win10/Win11 SDK 版本写死。
+1. 使用 .NET SDK 8+ 的 `dotnet build`。
+2. 安装器会依次检查 `PATH`、`COMPUTER_USE_DOTNET_PATH` 和 Windows 标准安装位置里的 `dotnet.exe`。
 
 当前 native host 的 .NET 目标框架是 `net8.0-windows10.0.19041.0`，用于启用 `Windows.Graphics.Capture` 所需的 Windows SDK C#/WinRT projections。修改 `.csproj` 的 `TargetFramework` 时，必须同步更新 `computer_use/src/windows/bridge/native-host-driver.ts` 里的 `NATIVE_HOST_TARGET_FRAMEWORK`，否则安装 smoke test 会启动旧输出目录。
 
-如果 fallback 编译提示缺少 `Windows.winmd`，安装 Windows 10/11 SDK，或设置 `COMPUTER_USE_WINDOWS_WINMD_PATH` 到本机实际 `Windows.winmd` 文件。
-
-## PowerShell 兼容入口
-
-旧入口仍保留：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install-claude-code.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
-```
-
-这些脚本会尽量沿用当前正在运行的 PowerShell host 调用子脚本，避免 PowerShell 7 与 Windows PowerShell 5.1 混用。但新开发和文档应优先使用 npm/Node 入口。
-
 ## 不再保留的入口
+
+PowerShell 安装/doctor 兼容入口不再保留。根目录 `install-claude-code.ps1`、`scripts\install-claude-code.ps1`、`scripts\install-codex.ps1`、`scripts\doctor-computer-use.ps1` 和它们的共享 helper 已由 `scripts\install-plugin.mjs` 取代，避免 npm/Node 主路径和 PowerShell 副本长期漂移。
 
 根目录 `scripts\computer-use-client.mjs` 不再需要，也不应恢复为常规入口。原因：
 
