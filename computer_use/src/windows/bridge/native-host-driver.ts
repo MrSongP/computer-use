@@ -17,6 +17,7 @@ import type {
 } from "../../core/contracts/action.js";
 import type { WindowRef } from "../../core/contracts/window.js";
 import { resolveVirtualScreenMetrics, type VirtualScreenMetrics } from "../input/pointer-primitives.js";
+import type { PointerClickFeedback, PointerClickOptions } from "../input/pointer-input-service.js";
 import type { KeyboardInput, PointerClick, PointerDrag, PointerScroll } from "../shared/win32-types.js";
 import type { NativeAppLaunchOptions, NativeBridge } from "./native-bridge.js";
 import { PowerShellNativeBridge } from "./powershell-driver.js";
@@ -196,10 +197,14 @@ export class NativeHostBridge implements NativeBridge {
     );
   }
 
-  async sendPointerClick(click: PointerClick): Promise<void> {
-    return this.invokeOrFallback(
-      () => this.invokePrimary("sendPointerClick", { click, meta: this.currentTurnMeta ?? null }),
-      () => this.invokeFallback(() => this.fallback.sendPointerClick(click))
+  async sendPointerClick(click: PointerClick, options?: PointerClickOptions): Promise<PointerClickFeedback | void> {
+    return await this.invokeOrFallbackWithResult<PointerClickFeedback | void>(
+      () => this.invokePrimaryResult<PointerClickFeedback | void>("sendPointerClick", {
+        click,
+        targetWindow: options?.targetWindow ?? null,
+        meta: this.currentTurnMeta ?? null
+      }),
+      () => this.invokeFallbackWithResult(() => this.fallback.sendPointerClick(click, options))
     );
   }
 
@@ -218,17 +223,13 @@ export class NativeHostBridge implements NativeBridge {
   }
 
   async getVirtualScreenMetrics(): Promise<VirtualScreenMetrics> {
-    try {
-      const result = await this.invokeOrFallbackWithResult<VirtualScreenMetrics>(
-        () => this.invokePrimaryResult<VirtualScreenMetrics>("getVirtualScreenMetrics", {
-          meta: this.currentTurnMeta ?? null
-        }),
-        async () => resolveVirtualScreenMetrics()
-      );
-      return resolveVirtualScreenMetrics(result);
-    } catch {
-      return resolveVirtualScreenMetrics();
-    }
+    const result = await this.invokeOrFallbackWithResult<VirtualScreenMetrics>(
+      () => this.invokePrimaryResult<VirtualScreenMetrics>("getVirtualScreenMetrics", {
+        meta: this.currentTurnMeta ?? null
+      }),
+      () => this.invokeFallbackWithResult(() => this.fallback.getVirtualScreenMetrics())
+    );
+    return resolveVirtualScreenMetrics(result);
   }
 
   async listWindows(): Promise<readonly WindowRef[]> {
@@ -456,7 +457,11 @@ export class NativeHostBridge implements NativeBridge {
         elementsTotal: 0,
         elementsMatched: 0,
         truncated: false,
-        partial: true
+        partial: true,
+        degradedReasons: appendUniqueReason(
+          partialResult.capture.degradedReasons,
+          "uia_timeout"
+        )
       };
 
       return partialResult;
@@ -855,6 +860,17 @@ function shouldRetryWindowStateWithoutText(
   params: WindowStateParams
 ): boolean {
   return error instanceof NativeHostTransportError && params.include_text !== false;
+}
+
+function appendUniqueReason(
+  reasons: readonly string[] | undefined,
+  reason: string
+): readonly string[] {
+  const result = [...(reasons ?? [])];
+  if (!result.includes(reason)) {
+    result.push(reason);
+  }
+  return result;
 }
 
 export class NativeHostBuildError extends Error {

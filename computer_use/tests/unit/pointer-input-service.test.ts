@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import type { WindowRef } from "../../src/core/contracts/window.js";
 import { WindowActivationService } from "../../src/windows/activation/window-activator.js";
 import {
+  CoordinatesOutsideVirtualScreenError,
+  CoordinatesOutsideWindowError,
   PointerInputService,
   normalizeClickParams,
   toPointerClick,
@@ -140,16 +142,126 @@ test("PointerInputService activates the window before forwarding the normalized 
       clickCount: 2
     }
   ]);
-  assert.equal(execution.activation.strategy.maxForegroundRetries, 20);
-  assert.equal(execution.activation.strategy.attachThreadInputMode, "unavailable");
+  assert.equal(execution.activation.plan.strategy.maxForegroundRetries, 20);
+  assert.equal(execution.activation.plan.strategy.attachThreadInputMode, "unavailable");
   assert.deepEqual(execution.clickPlan.coordinates, {
     pixelX: 110,
     pixelY: 220,
     absoluteX: 3757,
     absoluteY: 13362
   });
+  assert.deepEqual(execution.clickPlan.virtualScreen, {
+    originX: 0,
+    originY: 0,
+    width: 1920,
+    height: 1080,
+    source: "default"
+  });
   assert.equal(execution.clickPlan.reservedPrimitives.scroll.kind, "scroll");
   assert.equal(execution.clickPlan.reservedPrimitives.drag.kind, "drag");
+});
+
+test("PointerInputService preserves negative-screen clicks when native virtual metrics include the monitor", async () => {
+  const recordedClicks: PointerClick[] = [];
+  const secondaryMonitorWindow: WindowRef = {
+    id: 202,
+    app: "qq.exe",
+    rect: { left: -2167, top: 300, right: -719, bottom: 1371 }
+  };
+  const activationService = new WindowActivationService({
+    async activateWindow(window) {
+      return {
+        ok: true,
+        window,
+        focused: true,
+        focusedSource: "GetForegroundWindow",
+        foregroundWindowId: window.id
+      };
+    }
+  });
+  const service = new PointerInputService(activationService, {
+    async getVirtualScreenMetrics() {
+      return {
+        originX: -2560,
+        originY: 0,
+        width: 4480,
+        height: 1440,
+        source: "native"
+      };
+    },
+    async sendPointerClick(click) {
+      recordedClicks.push(click);
+      return {
+        postInputFocus: {
+          focused: true,
+          matchesTarget: true,
+          foregroundWindowId: secondaryMonitorWindow.id
+        },
+        hitTest: {
+          hwndAtPoint: secondaryMonitorWindow.id,
+          matchesTarget: true
+        }
+      };
+    }
+  });
+
+  const execution = await service.click({
+    window: secondaryMonitorWindow,
+    x: 175,
+    y: 275
+  });
+
+  assert.deepEqual(recordedClicks, [
+    {
+      x: -1992,
+      y: 575,
+      button: "left",
+      clickCount: 1
+    }
+  ]);
+  assert.deepEqual(execution.clickPlan.coordinates, {
+    pixelX: -1992,
+    pixelY: 575,
+    absoluteX: 8311,
+    absoluteY: 26187
+  });
+  assert.equal(execution.feedback?.hitTest?.matchesTarget, true);
+});
+
+test("PointerInputService rejects negative-screen clicks when virtual metrics do not include that monitor", async () => {
+  const secondaryMonitorWindow: WindowRef = {
+    id: 202,
+    app: "qq.exe",
+    rect: { left: -2167, top: 300, right: -719, bottom: 1371 }
+  };
+  const activationService = new WindowActivationService({
+    async activateWindow() {}
+  });
+  const service = new PointerInputService(activationService, {
+    async sendPointerClick() {
+      throw new Error("must not send unsafe click");
+    }
+  });
+
+  await assert.rejects(
+    () => service.click({
+      window: secondaryMonitorWindow,
+      x: 175,
+      y: 275
+    }),
+    CoordinatesOutsideVirtualScreenError
+  );
+});
+
+test("toPointerClick rejects coordinates outside the carried window rect", () => {
+  assert.throws(
+    () => toPointerClick({
+      window: windowWithRect,
+      x: 401,
+      y: 20
+    }),
+    CoordinatesOutsideWindowError
+  );
 });
 
 test("PointerInputService activates before scroll and drag primitives", async () => {

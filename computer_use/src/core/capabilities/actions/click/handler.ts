@@ -1,7 +1,8 @@
 import type { JsonRpcRequest, JsonRpcResponse } from "../../../../core/contracts/rpc.js";
-import type { ClickParams } from "../../../../core/contracts/action.js";
+import type { ClickParams, ClickResult } from "../../../../core/contracts/action.js";
 import type { ExecutionContext } from "../../../../core/runtime/execution-context.js";
 import { WindowActivationService } from "../../../../windows/activation/window-activator.js";
+import type { PointerClickExecution } from "../../../../windows/input/pointer-input-service.js";
 import { PointerInputService } from "../../../../windows/input/pointer-input-service.js";
 import { clickCapability, validateClickParams } from "./contract.js";
 
@@ -10,7 +11,7 @@ export class ClickHandler {
 
   constructor(private readonly context: ExecutionContext) {}
 
-  async handle(request: JsonRpcRequest<ClickParams>): Promise<JsonRpcResponse<null>> {
+  async handle(request: JsonRpcRequest<ClickParams>): Promise<JsonRpcResponse<ClickResult>> {
     return this.context.trace.runAction({
       actionType: this.definition.method,
       request,
@@ -46,13 +47,49 @@ export class ClickHandler {
         const execution = await pointerInputService.click(params);
         await trace.writeJsonArtifact("activation", "activation-plan.json", execution.activation);
         await trace.writeJsonArtifact("pointer", "pointer-click-plan.json", execution.clickPlan);
+        if (execution.feedback) {
+          await trace.writeJsonArtifact("pointer-feedback", "pointer-click-feedback.json", execution.feedback);
+        }
 
         return {
           id: request.id,
           ok: true,
-          result: null
+          result: toClickResult(execution)
         };
       }
     });
   }
+}
+
+function toClickResult(execution: PointerClickExecution): ClickResult {
+  const warnings: string[] = [];
+  const postInputFocus = execution.feedback?.postInputFocus;
+  const hitTest = execution.feedback?.hitTest;
+  if (postInputFocus && !postInputFocus.matchesTarget) {
+    warnings.push("focus_lost_after_click");
+  }
+  if (hitTest && hitTest.matchesTarget === false) {
+    warnings.push("click_likely_missed_target");
+  }
+
+  return {
+    ok: true,
+    window: execution.activation.window,
+    screenPoint: {
+      x: execution.pointerClick.x,
+      y: execution.pointerClick.y
+    },
+    clickPlan: {
+      moveFlags: execution.clickPlan.moveFlags,
+      pixelX: execution.clickPlan.coordinates.pixelX,
+      pixelY: execution.clickPlan.coordinates.pixelY,
+      absoluteX: execution.clickPlan.coordinates.absoluteX,
+      absoluteY: execution.clickPlan.coordinates.absoluteY,
+      virtualScreen: execution.clickPlan.virtualScreen
+    },
+    activation: execution.activation,
+    postInputFocus,
+    hitTest,
+    warnings: warnings.length > 0 ? warnings : undefined
+  };
 }

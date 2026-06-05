@@ -70,10 +70,12 @@ test("codex adapter drives the helper end-to-end and writes trace artifacts by s
     assert.equal(windowState.window.id, 101);
     assert.equal(windowState.capture.screenshotRequested, true);
 
-    assert.deepEqual(
-      await adapter.invoke("click", { window, x: 80, y: 140 }, { meta: turnOneMeta }),
-      null
-    );
+    const clickResult = await adapter.invoke("click", { window, x: 80, y: 140 }, { meta: turnOneMeta }) as {
+      ok: boolean;
+      screenPoint: { x: number; y: number };
+    };
+    assert.equal(clickResult.ok, true);
+    assert.deepEqual(clickResult.screenPoint, { x: 80, y: 140 });
     assert.deepEqual(
       await adapter.invoke("press_key", { window, key: "Return" }, { meta: turnOneMeta }),
       null

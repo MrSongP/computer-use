@@ -11,6 +11,7 @@ import type {
 import type { WindowRef } from "../../core/contracts/window.js";
 import { createTaskbarApp, createTaskbarWindow, isTaskbarAppId } from "../../core/hooks/shell/taskbar-target.js";
 import { resolveVirtualScreenMetrics, type VirtualScreenMetrics } from "../input/pointer-primitives.js";
+import type { PointerClickFeedback, PointerClickOptions } from "../input/pointer-input-service.js";
 import type { KeyboardInput, PointerClick, PointerDrag, PointerScroll } from "../shared/win32-types.js";
 import type { NativeAppLaunchOptions, NativeBridge } from "./native-bridge.js";
 
@@ -76,8 +77,20 @@ export class NullNativeBridge implements NativeBridge {
     this.invocations.push({ name: "sendKeyboardInputs", payload: inputs });
   }
 
-  async sendPointerClick(click: PointerClick): Promise<void> {
+  async sendPointerClick(click: PointerClick, options?: PointerClickOptions): Promise<PointerClickFeedback> {
     this.invocations.push({ name: "sendPointerClick", payload: click });
+    return {
+      postInputFocus: {
+        focused: true,
+        matchesTarget: true,
+        foregroundWindowId: options?.targetWindow?.id ?? 101
+      },
+      hitTest: {
+        hwndAtPoint: options?.targetWindow?.id ?? 101,
+        window: options?.targetWindow,
+        matchesTarget: true
+      }
+    };
   }
 
   async sendPointerScroll(scroll: PointerScroll): Promise<void> {

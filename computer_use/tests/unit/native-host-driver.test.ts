@@ -223,7 +223,8 @@ test("NativeHostBridge retries getWindowState without text after a native-host t
     elementsTotal: 0,
     elementsMatched: 0,
     truncated: false,
-    partial: true
+    partial: true,
+    degradedReasons: ["uia_timeout"]
   });
 });
 

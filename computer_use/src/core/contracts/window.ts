@@ -7,6 +7,12 @@ export interface WindowRect {
   bottom: number;
 }
 
+export interface WindowHealth {
+  hung: boolean;
+  isResponding: boolean;
+  lastInputIdleMs?: number;
+}
+
 export interface WindowRef {
   id: number;
   app: AppIdentifier;
@@ -19,4 +25,5 @@ export interface WindowRef {
   foregroundWindowId?: number;
   rectCoordinateSpace?: "virtual_screen" | "unknown";
   rectOnVirtualScreen?: boolean;
+  health?: WindowHealth;
 }

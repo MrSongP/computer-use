@@ -290,8 +290,7 @@ namespace ComputerUse.NativeHost
                     SendKeyboardInputs(GetKeyboardInputs(payload));
                     return null;
                 case "sendPointerClick":
-                    SendPointerClick(GetPointerClick(payload));
-                    return null;
+                    return SendPointerClick(GetPointerClick(payload), ReadOptionalDictionary(payload, "targetWindow"));
                 case "sendPointerScroll":
                     SendPointerScroll(GetPointerScroll(payload));
                     return null;
@@ -647,11 +646,12 @@ namespace ComputerUse.NativeHost
             });
         }
 
-        private void SendPointerClick(PointerClickDto click)
+        private Dictionary<string, object> SendPointerClick(PointerClickDto click, IDictionary<string, object> targetWindow = null)
         {
             EnsureTurnInitialized();
             ThrowIfInterrupted();
 
+            Dictionary<string, object> result = null;
             WithDpiGuard(delegate
             {
                 MoveCursorHumanized(click.X, click.Y);
@@ -702,7 +702,68 @@ namespace ComputerUse.NativeHost
                         Thread.Sleep(50);
                     }
                 }
+
+                result = BuildPointerClickFeedback(click, targetWindow);
             });
+
+            return result ?? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private Dictionary<string, object> BuildPointerClickFeedback(
+            PointerClickDto click,
+            IDictionary<string, object> targetWindow
+        )
+        {
+            var targetWindowId = ReadOptionalWindowId(targetWindow);
+            var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+            var foregroundWindow = GetForegroundWindow();
+            var postInputFocus = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            postInputFocus["focused"] = targetWindowId.HasValue &&
+                foregroundWindow != IntPtr.Zero &&
+                foregroundWindow.ToInt64() == targetWindowId.Value;
+            postInputFocus["matchesTarget"] = (bool)postInputFocus["focused"];
+            if (foregroundWindow != IntPtr.Zero)
+            {
+                postInputFocus["foregroundWindowId"] = foregroundWindow.ToInt64();
+            }
+            result["postInputFocus"] = postInputFocus;
+
+            var point = new POINT { x = click.X, y = click.Y };
+            var rawHitWindow = WindowFromPoint(point);
+            var hitWindow = rawHitWindow == IntPtr.Zero ? IntPtr.Zero : GetAncestor(rawHitWindow, 2);
+            if (hitWindow == IntPtr.Zero)
+            {
+                hitWindow = rawHitWindow;
+            }
+
+            var hitTest = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            if (rawHitWindow != IntPtr.Zero)
+            {
+                hitTest["rawHwndAtPoint"] = rawHitWindow.ToInt64();
+            }
+            if (hitWindow != IntPtr.Zero)
+            {
+                hitTest["hwndAtPoint"] = hitWindow.ToInt64();
+                hitTest["matchesTarget"] = targetWindowId.HasValue && hitWindow.ToInt64() == targetWindowId.Value;
+                var hitWindowPayload = BuildWindowStatePayload(hitWindow, null);
+                if (hitWindowPayload != null)
+                {
+                    hitTest["window"] = hitWindowPayload;
+                }
+                var processName = GetWindowProcessName(hitWindow);
+                if (!string.IsNullOrWhiteSpace(processName))
+                {
+                    hitTest["processName"] = processName;
+                }
+            }
+            else if (targetWindowId.HasValue)
+            {
+                hitTest["matchesTarget"] = false;
+            }
+            result["hitTest"] = hitTest;
+
+            return result;
         }
 
         private void MoveCursorHumanized(int targetX, int targetY)
@@ -1212,6 +1273,7 @@ namespace ComputerUse.NativeHost
             result["window"] = stateWindow;
 
             var capture = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            var degradedReasons = new List<string>();
             capture["screenshotRequested"] = includeScreenshot;
             capture["textRequested"] = includeText;
 
@@ -1220,24 +1282,44 @@ namespace ComputerUse.NativeHost
                 var screenshot = CaptureWindowJpeg(hwnd, jpegQuality);
                 result["screenshot"] = screenshot;
                 capture["screenshotSource"] = screenshot["source"];
+                object screenshotDegradedReason;
+                if (screenshot.TryGetValue("degradedReason", out screenshotDegradedReason) &&
+                    screenshotDegradedReason != null)
+                {
+                    degradedReasons.Add(screenshotDegradedReason.ToString());
+                    capture["screenshotDegradedReason"] = screenshotDegradedReason;
+                }
             }
 
             if (includeText)
             {
                 var text = BuildAccessibilityTree(hwnd, accessibilityOptions);
                 result["text"] = text.Root;
-                capture["textSource"] = "uia";
+                var textSource = text.MatchedCount == 0 ? "uia_empty" : "uia";
+                capture["textSource"] = textSource;
                 capture["elementsReturned"] = text.ReturnedCount;
                 capture["elementsTotal"] = text.TotalCount;
                 capture["elementsMatched"] = text.MatchedCount;
                 capture["truncated"] = text.Truncated;
                 capture["partial"] = text.Truncated;
+                if (textSource == "uia_empty")
+                {
+                    degradedReasons.Add("uia_empty");
+                }
+                if (text.Truncated)
+                {
+                    degradedReasons.Add("uia_truncated");
+                }
                 if (text.HasLastReturnedIndex)
                 {
                     capture["lastReturnedIndex"] = text.LastReturnedIndex;
                 }
             }
 
+            if (degradedReasons.Count > 0)
+            {
+                capture["degradedReasons"] = degradedReasons;
+            }
             result["capture"] = capture;
             return result;
         }
@@ -1473,7 +1555,31 @@ namespace ComputerUse.NativeHost
             }
             payload["rectCoordinateSpace"] = "virtual_screen";
             payload["rectOnVirtualScreen"] = IsRectOnVirtualScreen(rect);
+            payload["health"] = BuildWindowHealthPayload(hwnd);
             return payload;
+        }
+
+        private Dictionary<string, object> BuildWindowHealthPayload(IntPtr hwnd)
+        {
+            var hung = IsHungAppWindow(hwnd);
+            var health = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            health["hung"] = hung;
+            health["isResponding"] = !hung;
+            health["lastInputIdleMs"] = GetLastInputIdleMs();
+            return health;
+        }
+
+        private static long GetLastInputIdleMs()
+        {
+            var info = new LASTINPUTINFO();
+            info.cbSize = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO));
+            if (!GetLastInputInfo(ref info))
+            {
+                return -1;
+            }
+
+            var elapsed = unchecked((uint)Environment.TickCount - info.dwTime);
+            return elapsed;
         }
 
         private bool IsRectOnVirtualScreen(RECT rect)
@@ -1510,6 +1616,8 @@ namespace ComputerUse.NativeHost
                 if (result == null)
                 {
                     result = CaptureWindowJpegWithGdi(rect, jpegQuality);
+                    result["degradedReason"] = "wgc_failed";
+                    result["gdiFallbackAt"] = DateTimeOffset.UtcNow.ToString("o");
                 }
             });
 
@@ -2828,6 +2936,22 @@ namespace ComputerUse.NativeHost
             return new IntPtr(ReadRequiredLong(window, "id"));
         }
 
+        private static long? ReadOptionalWindowId(IDictionary<string, object> window)
+        {
+            if (window == null)
+            {
+                return null;
+            }
+
+            object value;
+            if (!window.TryGetValue("id", out value) || value == null)
+            {
+                return null;
+            }
+
+            return Convert.ToInt64(value);
+        }
+
         private static IList<KeyboardInputDto> GetKeyboardInputs(IDictionary<string, object> payload)
         {
             object rawInputs;
@@ -3295,6 +3419,28 @@ namespace ComputerUse.NativeHost
             }
         }
 
+        private static string GetWindowProcessName(IntPtr hwnd)
+        {
+            uint processId;
+            GetWindowThreadProcessId(hwnd, out processId);
+            if (processId == 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                using (var process = Process.GetProcessById((int)processId))
+                {
+                    return process.ProcessName;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private static bool IsFilteredClassName(IntPtr hwnd)
         {
             var builder = new StringBuilder(256);
@@ -3550,6 +3696,18 @@ namespace ComputerUse.NativeHost
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr WindowFromPoint(POINT point);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsHungAppWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
@@ -4320,6 +4478,13 @@ namespace ComputerUse.NativeHost
     {
         public int x;
         public int y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LASTINPUTINFO
+    {
+        public uint cbSize;
+        public uint dwTime;
     }
 
     [StructLayout(LayoutKind.Sequential)]

@@ -16,6 +16,7 @@ import type {
 } from "../../core/contracts/action.js";
 import type { WindowRef } from "../../core/contracts/window.js";
 import { resolveVirtualScreenMetrics, type VirtualScreenMetrics } from "../input/pointer-primitives.js";
+import type { PointerClickFeedback, PointerClickOptions } from "../input/pointer-input-service.js";
 import type { KeyboardInput, PointerClick, PointerDrag, PointerScroll } from "../shared/win32-types.js";
 import type { NativeAppLaunchOptions, NativeBridge } from "./native-bridge.js";
 
@@ -444,7 +445,7 @@ export class PowerShellNativeBridge implements NativeBridge {
     });
   }
 
-  async sendPointerClick(click: PointerClick): Promise<void> {
+  async sendPointerClick(click: PointerClick, _options?: PointerClickOptions): Promise<PointerClickFeedback | void> {
     await this.invoke({
       action: "sendPointerClick",
       click,

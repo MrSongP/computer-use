@@ -21,6 +21,8 @@ export interface WindowStateScreenshot {
   height: number;
   byteLength: number;
   source: "wgc" | "gdi_fallback" | "mock";
+  degradedReason?: "wgc_failed" | string;
+  gdiFallbackAt?: string;
   raw?: {
     data: string;
     mime: "image/png";
@@ -67,6 +69,8 @@ export interface WindowStateResult {
     elementsMatched?: number;
     truncated?: boolean;
     partial?: boolean;
+    degradedReasons?: readonly string[];
+    screenshotDegradedReason?: string;
     lastReturnedIndex?: number;
   };
 }

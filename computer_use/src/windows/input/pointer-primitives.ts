@@ -32,6 +32,7 @@ export interface PointerDragPrimitive {
 
 export interface PointerClickPlan {
   moveFlags: number;
+  virtualScreen: VirtualScreenMetrics;
   coordinates: NormalizedPointerCoordinate;
   reservedPrimitives: {
     scroll: PointerScrollPrimitive;
@@ -74,6 +75,16 @@ export function normalizePointerCoordinate(
   };
 }
 
+export function isPointWithinVirtualScreen(
+  x: number,
+  y: number,
+  virtualScreen: VirtualScreenMetrics
+): boolean {
+  const right = virtualScreen.originX + virtualScreen.width;
+  const bottom = virtualScreen.originY + virtualScreen.height;
+  return x >= virtualScreen.originX && x < right && y >= virtualScreen.originY && y < bottom;
+}
+
 export function buildPointerClickPlan(
   x: number,
   y: number,
@@ -81,6 +92,7 @@ export function buildPointerClickPlan(
 ): PointerClickPlan {
   return {
     moveFlags: POINTER_MOVE_FLAGS,
+    virtualScreen,
     coordinates: normalizePointerCoordinate(x, y, virtualScreen),
     reservedPrimitives: {
       scroll: {

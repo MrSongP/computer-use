@@ -49,10 +49,12 @@ test("claude code adapter drives shared capabilities and writes host-scoped trac
     assert.equal(windowState.window.id, 101);
     assert.equal(windowState.capture.screenshotRequested, true);
 
-    assert.deepEqual(
-      await adapter.invoke("click", { window, x: 80, y: 140 }, { meta: turnMeta }),
-      null
-    );
+    const clickResult = await adapter.invoke("click", { window, x: 80, y: 140 }, { meta: turnMeta }) as {
+      ok: boolean;
+      screenPoint: { x: number; y: number };
+    };
+    assert.equal(clickResult.ok, true);
+    assert.deepEqual(clickResult.screenPoint, { x: 80, y: 140 });
     assert.deepEqual(
       await adapter.invoke("type_text", { window, text: "hello from claude" }, { meta: turnMeta }),
       null
@@ -171,6 +173,8 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.equal(clickTool.inputSchema.properties.window.required.includes("app"), true);
     assert.equal(clickTool.inputSchema.properties.claudeTurnMetadata.required.includes("session_id"), true);
     assert.equal(clickTool.inputSchema.additionalProperties, false);
+    assert.equal(clickTool.outputSchema.required.includes("screenPoint"), true);
+    assert.equal(clickTool.outputSchema.properties.clickPlan.properties.virtualScreen.required.includes("originX"), true);
 
     const listWindows = JSON.parse(listWindowsLine!);
     assert.deepEqual(JSON.parse(listWindows.result.content[0].text), [

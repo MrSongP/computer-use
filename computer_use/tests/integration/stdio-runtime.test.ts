@@ -28,7 +28,11 @@ test("stdio runtime handles click and end_turn requests over line-delimited JSON
   input.write(`${JSON.stringify({ id: 2, method: "end_turn", params: {} })}\n`);
 
   const [clickLine, endTurnLine] = await responses;
-  assert.deepEqual(JSON.parse(clickLine!), { id: 1, ok: true, result: null });
+  const clickResponse = JSON.parse(clickLine!);
+  assert.equal(clickResponse.id, 1);
+  assert.equal(clickResponse.ok, true);
+  assert.equal(clickResponse.result.ok, true);
+  assert.deepEqual(clickResponse.result.screenPoint, { x: 10, y: 20 });
   assert.deepEqual(JSON.parse(endTurnLine!), { id: 2, ok: true, result: null });
 
   const bridge = scaffold.runtime.nativeBridge as MockNativeBridge;

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createScaffoldRuntime } from "../../src/index.js";
+import type { ClickResult } from "../../src/core/contracts/action.js";
 import type { WindowStateResult } from "../../src/core/contracts/capture.js";
 import type { MockNativeBridge } from "../../src/mocks/native-bridge.mock.js";
 
@@ -17,7 +18,13 @@ test("action lane dispatches click through the mock native bridge", async () => 
     }
   });
 
-  assert.deepEqual(response, { id: 1, ok: true, result: null });
+  assert.equal(response.ok, true);
+  const clickResult = response.result as ClickResult;
+  assert.equal(clickResult.ok, true);
+  assert.deepEqual(clickResult.screenPoint, { x: 100, y: 200 });
+  assert.equal(clickResult.activation.focused, true);
+  assert.equal(clickResult.postInputFocus?.matchesTarget, true);
+  assert.equal(clickResult.hitTest?.matchesTarget, true);
   const bridge = scaffold.runtime.nativeBridge as MockNativeBridge;
   assert.deepEqual(
     bridge.getRecordedInvocations().map((entry) => entry.name),
@@ -269,9 +276,11 @@ test("action lane exposes capture and UIA capabilities through the same runtime 
       "performSecondaryAction",
       "beginTurn",
       "activateWindow",
+      "getVirtualScreenMetrics",
       "sendPointerScroll",
       "beginTurn",
       "activateWindow",
+      "getVirtualScreenMetrics",
       "sendPointerDrag"
     ]
   );

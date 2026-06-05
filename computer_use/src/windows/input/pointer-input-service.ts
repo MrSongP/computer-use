@@ -1,9 +1,16 @@
-import type { ClickParams, DragParams, ScrollParams } from "../../core/contracts/action.js";
+import type {
+  ClickParams,
+  DragParams,
+  PointerHitTestResult,
+  PostInputFocusResult,
+  ScrollParams
+} from "../../core/contracts/action.js";
 import type { WindowRef } from "../../core/contracts/window.js";
-import type { WindowActivationService } from "../activation/window-activator.js";
+import type { WindowActivationReport, WindowActivationService } from "../activation/window-activator.js";
 import type { PointerClick, PointerDrag, PointerScroll } from "../shared/win32-types.js";
 import {
   buildPointerClickPlan,
+  isPointWithinVirtualScreen,
   resolveVirtualScreenMetrics,
   type PointerClickPlan,
   type VirtualScreenMetrics
@@ -13,15 +20,26 @@ import type { ActivationPlan } from "../activation/activation-strategy.js";
 type CanonicalMouseButton = "left" | "right" | "middle";
 
 export interface PointerInputPort {
-  sendPointerClick(click: PointerClick): Promise<void>;
+  sendPointerClick(click: PointerClick, options?: PointerClickOptions): Promise<PointerClickFeedback | void>;
   sendPointerScroll?(scroll: PointerScroll): Promise<void>;
   sendPointerDrag?(drag: PointerDrag): Promise<void>;
   getVirtualScreenMetrics?(): Promise<VirtualScreenMetrics>;
 }
 
+export interface PointerClickOptions {
+  targetWindow?: WindowRef;
+}
+
+export interface PointerClickFeedback {
+  postInputFocus?: PostInputFocusResult;
+  hitTest?: PointerHitTestResult;
+}
+
 export interface PointerClickExecution {
-  activation: ActivationPlan;
+  activation: WindowActivationReport;
   clickPlan: PointerClickPlan;
+  pointerClick: PointerClick;
+  feedback?: PointerClickFeedback;
 }
 
 export interface PointerScrollExecution {
@@ -43,23 +61,34 @@ export class PointerInputService {
 
   async click(params: ClickParams): Promise<PointerClickExecution> {
     const normalizedParams = normalizeClickParams(params);
-    const activation = await this.activationService.activate(normalizedParams.window);
+    const activation = await this.activationService.activateWithReport(normalizedParams.window);
     const pointerClick = toPointerClick(normalizedParams);
+    const virtualScreen = await this.resolveVirtualScreen();
+    assertPointInsideVirtualScreen(pointerClick.x, pointerClick.y, virtualScreen);
     const clickPlan = buildPointerClickPlan(
       pointerClick.x,
       pointerClick.y,
-      await this.resolveVirtualScreen()
+      virtualScreen
     );
-    await this.port.sendPointerClick(pointerClick);
+    const feedback = normalizeClickFeedback(
+      await this.port.sendPointerClick(pointerClick, {
+        targetWindow: normalizedParams.window
+      }),
+      normalizedParams.window
+    );
     return {
       activation,
-      clickPlan
+      clickPlan,
+      pointerClick,
+      feedback
     };
   }
 
   async scroll(params: ScrollParams): Promise<PointerScrollExecution> {
     const scroll = toPointerScroll(params);
     const activation = await this.activationService.activate(params.window);
+    const virtualScreen = await this.resolveVirtualScreen();
+    assertPointInsideVirtualScreen(scroll.x, scroll.y, virtualScreen);
     if (!this.port.sendPointerScroll) {
       throw new Error("Native bridge does not support pointer scroll");
     }
@@ -70,6 +99,9 @@ export class PointerInputService {
   async drag(params: DragParams): Promise<PointerDragExecution> {
     const drag = toPointerDrag(params);
     const activation = await this.activationService.activate(params.window);
+    const virtualScreen = await this.resolveVirtualScreen();
+    assertPointInsideVirtualScreen(drag.fromX, drag.fromY, virtualScreen);
+    assertPointInsideVirtualScreen(drag.toX, drag.toY, virtualScreen);
     if (!this.port.sendPointerDrag) {
       throw new Error("Native bridge does not support pointer drag");
     }
@@ -82,7 +114,11 @@ export class PointerInputService {
       return this.virtualScreen;
     }
 
-    return await this.port.getVirtualScreenMetrics();
+    try {
+      return await this.port.getVirtualScreenMetrics();
+    } catch (error) {
+      throw new VirtualScreenMetricsUnavailableError(error);
+    }
   }
 }
 
@@ -100,6 +136,7 @@ export function toPointerClick(params: ClickParams): PointerClick {
     throw new Error("Pointer click requires finite coordinates");
   }
 
+  assertWindowRelativePoint(params.window, x, y, "Pointer click");
   const point = resolveScreenPoint(params.window, x, y);
 
   return {
@@ -112,6 +149,7 @@ export function toPointerClick(params: ClickParams): PointerClick {
 
 export function toPointerScroll(params: ScrollParams): PointerScroll {
   assertFiniteCoordinate(params.x, params.y, "Pointer scroll");
+  assertWindowRelativePoint(params.window, params.x, params.y, "Pointer scroll");
   const scrollX = normalizeWheelAmount(params.scroll_x);
   const scrollY = normalizeWheelAmount(params.scroll_y);
   if (scrollX === 0 && scrollY === 0) {
@@ -131,6 +169,8 @@ export function toPointerScroll(params: ScrollParams): PointerScroll {
 export function toPointerDrag(params: DragParams): PointerDrag {
   assertFiniteCoordinate(params.from_x, params.from_y, "Pointer drag start");
   assertFiniteCoordinate(params.to_x, params.to_y, "Pointer drag end");
+  assertWindowRelativePoint(params.window, params.from_x, params.from_y, "Pointer drag start");
+  assertWindowRelativePoint(params.window, params.to_x, params.to_y, "Pointer drag end");
 
   const start = resolveScreenPoint(params.window, params.from_x, params.from_y);
   const end = resolveScreenPoint(params.window, params.to_x, params.to_y);
@@ -144,6 +184,136 @@ export function toPointerDrag(params: DragParams): PointerDrag {
     durationMs: normalizeDuration(params.duration_ms),
     steps: normalizeSteps(params.steps)
   };
+}
+
+function assertWindowRelativePoint(
+  window: WindowRef,
+  x: number,
+  y: number,
+  label: string
+): void {
+  const rect = window.rect;
+  if (!rect) {
+    return;
+  }
+
+  const width = rect.right - rect.left;
+  const height = rect.bottom - rect.top;
+  if (
+    !Number.isFinite(rect.left) ||
+    !Number.isFinite(rect.top) ||
+    !Number.isFinite(rect.right) ||
+    !Number.isFinite(rect.bottom) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return;
+  }
+
+  if (x < 0 || x >= width || y < 0 || y >= height) {
+    throw new CoordinatesOutsideWindowError(label, x, y, width, height, window);
+  }
+}
+
+function assertPointInsideVirtualScreen(
+  x: number,
+  y: number,
+  virtualScreen: VirtualScreenMetrics
+): void {
+  if (!isPointWithinVirtualScreen(x, y, virtualScreen)) {
+    throw new CoordinatesOutsideVirtualScreenError(x, y, virtualScreen);
+  }
+}
+
+function normalizeClickFeedback(
+  feedback: PointerClickFeedback | void,
+  targetWindow: WindowRef
+): PointerClickFeedback | undefined {
+  if (!feedback) {
+    return undefined;
+  }
+
+  const result: PointerClickFeedback = { ...feedback };
+  if (result.hitTest) {
+    result.hitTest = {
+      ...result.hitTest,
+      matchesTarget: result.hitTest.matchesTarget ?? matchesWindow(result.hitTest.hwndAtPoint, targetWindow)
+    };
+  }
+  if (result.postInputFocus) {
+    result.postInputFocus = {
+      ...result.postInputFocus,
+      matchesTarget: result.postInputFocus.matchesTarget ??
+        matchesWindow(result.postInputFocus.foregroundWindowId, targetWindow)
+    };
+  }
+
+  return result;
+}
+
+function matchesWindow(candidateId: number | undefined, targetWindow: WindowRef): boolean {
+  return typeof candidateId === "number" && candidateId === targetWindow.id;
+}
+
+export class CoordinatesOutsideWindowError extends Error {
+  readonly code = "coordinates_outside_window";
+  readonly details: Record<string, unknown>;
+
+  constructor(
+    label: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    window: WindowRef
+  ) {
+    super(
+      `${label} coordinates (${x}, ${y}) are outside the target window bounds ` +
+        `[0, ${width}) x [0, ${height}).`
+    );
+    this.name = "CoordinatesOutsideWindowError";
+    this.details = {
+      x,
+      y,
+      windowWidth: width,
+      windowHeight: height,
+      window
+    };
+  }
+}
+
+export class CoordinatesOutsideVirtualScreenError extends Error {
+  readonly code = "coordinates_outside_virtual_screen";
+  readonly details: Record<string, unknown>;
+
+  constructor(x: number, y: number, virtualScreen: VirtualScreenMetrics) {
+    const right = virtualScreen.originX + virtualScreen.width;
+    const bottom = virtualScreen.originY + virtualScreen.height;
+    super(
+      `Pointer screen coordinates (${x}, ${y}) are outside the virtual screen bounds ` +
+        `[${virtualScreen.originX}, ${right}) x [${virtualScreen.originY}, ${bottom}).`
+    );
+    this.name = "CoordinatesOutsideVirtualScreenError";
+    this.details = {
+      x,
+      y,
+      virtualScreen
+    };
+  }
+}
+
+export class VirtualScreenMetricsUnavailableError extends Error {
+  readonly code = "virtual_screen_metrics_unavailable";
+  readonly details: Record<string, unknown>;
+
+  constructor(cause: unknown) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    super(`Could not resolve Windows virtual screen metrics before pointer input: ${message}`);
+    this.name = "VirtualScreenMetricsUnavailableError";
+    this.details = {
+      cause: message
+    };
+  }
 }
 
 function resolveScreenPoint(window: WindowRef, x: number, y: number): { x: number; y: number } {

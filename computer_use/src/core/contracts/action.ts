@@ -11,6 +11,23 @@ export type ActionMethod =
   | "perform_secondary_action"
   | "activate_window";
 
+export type ActivationUnlockStep = "escape" | "alt";
+
+export interface ActivationStrategy {
+  maxForegroundRetries: number;
+  unlockSequence: readonly ActivationUnlockStep[];
+  desktopFallback: boolean;
+  requiresAttachThreadInput: boolean;
+  attachThreadInputAvailable: boolean;
+  attachThreadInputMode: "native" | "approximate" | "unavailable";
+  attachThreadInputOnOffscreenWindow?: boolean;
+}
+
+export interface ActivationPlan {
+  targetWindow: WindowRef;
+  strategy: ActivationStrategy;
+}
+
 export interface ClickParams {
   window: WindowRef;
   x: number;
@@ -18,6 +35,55 @@ export interface ClickParams {
   click_count?: number;
   mouse_button?: "left" | "right" | "middle" | "l" | "r" | "m";
   screenshotId?: string;
+}
+
+export interface PointerScreenPoint {
+  x: number;
+  y: number;
+}
+
+export interface ClickVirtualScreenMetrics {
+  originX: number;
+  originY: number;
+  width: number;
+  height: number;
+  source: "default" | "native";
+}
+
+export interface ClickPlanResult {
+  moveFlags: number;
+  pixelX: number;
+  pixelY: number;
+  absoluteX: number;
+  absoluteY: number;
+  virtualScreen: ClickVirtualScreenMetrics;
+}
+
+export interface PostInputFocusResult {
+  focused: boolean;
+  matchesTarget: boolean;
+  foregroundWindowId?: number;
+}
+
+export interface PointerHitTestResult {
+  rawHwndAtPoint?: number;
+  hwndAtPoint?: number;
+  window?: WindowRef;
+  processName?: string;
+  matchesTarget?: boolean;
+}
+
+export interface ClickResult {
+  ok: true;
+  window: WindowRef;
+  screenPoint: PointerScreenPoint;
+  clickPlan: ClickPlanResult;
+  activation: ActivateWindowResult & {
+    plan: ActivationPlan;
+  };
+  postInputFocus?: PostInputFocusResult;
+  hitTest?: PointerHitTestResult;
+  warnings?: readonly string[];
 }
 
 export interface PressKeyParams {

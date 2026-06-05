@@ -86,9 +86,83 @@ const windowRefSchema: ToolInputSchema = {
     rectOnVirtualScreen: {
       type: "boolean",
       description: "Whether rect intersects the current Windows virtual screen."
+    },
+    health: {
+      type: "object",
+      description: "Window responsiveness health reported by Win32.",
+      properties: {
+        hung: {
+          type: "boolean",
+          description: "True when Windows reports the window as not responding."
+        },
+        isResponding: {
+          type: "boolean",
+          description: "Inverse of hung."
+        },
+        lastInputIdleMs: {
+          type: "integer",
+          minimum: -1,
+          description: "Milliseconds since the last user input observed by Windows, or -1 if unavailable."
+        }
+      },
+      required: ["hung", "isResponding"],
+      additionalProperties: false
     }
   },
   required: ["id", "app"],
+  additionalProperties: false
+};
+
+const virtualScreenSchema: ToolInputSchema = {
+  type: "object",
+  properties: {
+    originX: { type: "integer" },
+    originY: { type: "integer" },
+    width: { type: "integer", minimum: 2 },
+    height: { type: "integer", minimum: 2 },
+    source: {
+      type: "string",
+      enum: ["default", "native"],
+      description: "native means the metrics came from Windows SM_X/Y/CX/CYVIRTUALSCREEN."
+    }
+  },
+  required: ["originX", "originY", "width", "height", "source"],
+  additionalProperties: false
+};
+
+const activationPlanSchema: ToolInputSchema = {
+  type: "object",
+  properties: {
+    targetWindow: windowRefSchema,
+    strategy: {
+      type: "object",
+      properties: {
+        maxForegroundRetries: { type: "integer", minimum: 0 },
+        unlockSequence: {
+          type: "array",
+          items: { type: "string", enum: ["escape", "alt"] }
+        },
+        desktopFallback: { type: "boolean" },
+        requiresAttachThreadInput: { type: "boolean" },
+        attachThreadInputAvailable: { type: "boolean" },
+        attachThreadInputMode: {
+          type: "string",
+          enum: ["native", "approximate", "unavailable"]
+        },
+        attachThreadInputOnOffscreenWindow: { type: "boolean" }
+      },
+      required: [
+        "maxForegroundRetries",
+        "unlockSequence",
+        "desktopFallback",
+        "requiresAttachThreadInput",
+        "attachThreadInputAvailable",
+        "attachThreadInputMode"
+      ],
+      additionalProperties: false
+    }
+  },
+  required: ["targetWindow", "strategy"],
   additionalProperties: false
 };
 
@@ -243,6 +317,90 @@ export function getClaudeToolOutputSchema(
           }
         },
         required: ["ok", "window", "focused", "focusedSource"],
+        additionalProperties: false
+      };
+
+    case "click":
+      return {
+        type: "object",
+        description: "Structured click result with activation, screen-point, virtual-screen, hit-test, and focus evidence.",
+        properties: {
+          ok: {
+            type: "boolean",
+            description: "True when the click completed without an error."
+          },
+          window: windowRefSchema,
+          screenPoint: {
+            type: "object",
+            description: "Final screen coordinates in Windows virtual-screen pixels.",
+            properties: {
+              x: { type: "integer" },
+              y: { type: "integer" }
+            },
+            required: ["x", "y"],
+            additionalProperties: false
+          },
+          clickPlan: {
+            type: "object",
+            description: "Normalized pointer plan used for diagnostics and trace evidence.",
+            properties: {
+              moveFlags: { type: "integer" },
+              pixelX: { type: "integer" },
+              pixelY: { type: "integer" },
+              absoluteX: { type: "integer" },
+              absoluteY: { type: "integer" },
+              virtualScreen: virtualScreenSchema
+            },
+            required: ["moveFlags", "pixelX", "pixelY", "absoluteX", "absoluteY", "virtualScreen"],
+            additionalProperties: false
+          },
+          activation: {
+            type: "object",
+            properties: {
+              ok: { type: "boolean" },
+              window: windowRefSchema,
+              focused: { type: "boolean" },
+              focusedSource: {
+                type: "string",
+                enum: ["GetForegroundWindow", "assumed_after_successful_call"]
+              },
+              foregroundWindowId: {
+                type: "integer",
+                minimum: 0
+              },
+              hint: { type: "string" },
+              plan: activationPlanSchema
+            },
+            required: ["ok", "window", "focused", "focusedSource", "plan"],
+            additionalProperties: false
+          },
+          postInputFocus: {
+            type: "object",
+            properties: {
+              focused: { type: "boolean" },
+              matchesTarget: { type: "boolean" },
+              foregroundWindowId: { type: "integer", minimum: 0 }
+            },
+            required: ["focused", "matchesTarget"],
+            additionalProperties: false
+          },
+          hitTest: {
+            type: "object",
+            properties: {
+              hwndAtPoint: { type: "integer", minimum: 0 },
+              rawHwndAtPoint: { type: "integer", minimum: 0 },
+              window: windowRefSchema,
+              processName: { type: "string" },
+              matchesTarget: { type: "boolean" }
+            },
+            additionalProperties: false
+          },
+          warnings: {
+            type: "array",
+            items: { type: "string" }
+          }
+        },
+        required: ["ok", "window", "screenPoint", "clickPlan", "activation"],
         additionalProperties: false
       };
 

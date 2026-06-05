@@ -163,12 +163,16 @@ GOOD: for canvas/hotkey apps, focus the work surface, clear modal state, then ba
 - For tray-resident apps, use the launch hook as the decision point. When it rejects with `tray_restore_required`, inspect `windows.shell.taskbar` and click the existing app icon there instead of trying to force a duplicate launch.
 - `get_window_state` is an expensive point-in-time snapshot, not a live view. Use it to reason over, then batch related actions without re-snapshotting between every input.
 - After `get_window_state`, use the returned `state.window` for later actions; it is the canonical window object that was actually captured.
+- Treat `state.window.health.hung === true` as a warning that the target app is not responding. Stop app input, refresh or recover the window, and report the not-responding state instead of continuing with coordinates.
+- Treat `state.capture.degradedReasons` as first-class guidance. `uia_timeout` means accessibility text was not obtained at all, `uia_empty` means UIA completed without useful matching text, `uia_truncated` means the returned tree was cut short, and `wgc_failed` means screenshot capture fell back to GDI.
 - After a stale handle or lost window binding, recover a current window object with `get_window({ id, app })` using an id and app from an earlier returned `WindowRef`.
 - By default, request both screenshot and text only when both will drive the next decision. For simple visual inspection, screenshot is enough. For element targeting, request text and use `element_index`.
 - Accessibility text is returned as a structured node tree under `text`. Element indexes are stable only for the latest `get_window_state({ include_text: true })` result.
 - When `include_text: true` may return a large tree, pass `max_elements`, `role_filter`, and `name_contains` to narrow the snapshot before inspecting fields. Do not dump the full tree unless it is small or the user explicitly needs it.
 - Screenshot data is returned in `screenshot.data` with `mime: "image/jpeg"` plus dimensions and `source`. Do not write screenshots to disk just to inspect them unless the user asked for saved evidence or trace is enabled for debugging.
 - If `get_window_state` fails, stop app input and report the exact error. Do not continue with stale coordinates or attempt to bypass.
+- For IM apps such as QQ, WeChat, and Feishu, if UIA text is unavailable or degraded, prefer a keyboard recovery path before visual coordinate clicks: focus the window, press `Ctrl+F` or the app's search shortcut, type the contact name, and press `Return` when the UI shows the intended result. Use coordinate clicks only after confirming the target from the latest screenshot and returned window rect.
+- Before sending an IM message, inspect the target contact's recent 1-3 message previews when visible. If a recent preview is substantially similar to the outgoing text, ask the user to confirm that they still want to send the near-duplicate message.
 - The Computer Use tool will activate the target window before `click`, `drag`, `scroll`, `type_text`, `press_key`, `set_value`, `click_element`, `activate_window`, or `perform_secondary_action`. If activation or focus fails, inspect the returned `focusedSource`, `foregroundWindowId`, and hint, then refresh with `list_apps`/`get_window_state` and reselect the target instead of acting on a stale window.
 - If Computer Use reports that the Windows desktop is locked, stop immediately and ask the user to unlock the desktop. Do not try to interact through `LockApp.exe`.
 - When opening or launching a Windows app by name, call `list_apps` before launching anything.
@@ -311,7 +315,7 @@ interface LocalComputerUseTools {
   get_window(input: GetWindowInput): Promise<WindowRef>;
   launch_app(input: LaunchAppInput): Promise<null>;
   get_window_state(input: GetWindowStateInput): Promise<WindowStateResult>;
-  click(input: ClickInput): Promise<unknown>;
+  click(input: ClickInput): Promise<ClickResult>;
   click_element(input: ClickElementInput): Promise<unknown>;
   press_key(input: PressKeyInput): Promise<unknown>;
   type_text(input: TypeTextInput): Promise<unknown>;
@@ -344,6 +348,11 @@ type WindowRef = {
   foregroundWindowId?: number;
   rectCoordinateSpace?: "virtual_screen" | "unknown";
   rectOnVirtualScreen?: boolean;
+  health?: {
+    hung: boolean;
+    isResponding: boolean;
+    lastInputIdleMs?: number;
+  };
 };
 
 type AppDescriptor = {
@@ -403,6 +412,8 @@ type WindowStateResult = {
     height: number;
     byteLength: number;
     source: "wgc" | "gdi_fallback" | "mock";
+    degradedReason?: string;
+    gdiFallbackAt?: string;
     raw?: {
       data: string;
       mime: "image/png";
@@ -420,6 +431,8 @@ type WindowStateResult = {
     elementsMatched?: number;
     truncated?: boolean;
     partial?: boolean;
+    degradedReasons?: string[];
+    screenshotDegradedReason?: string;
     lastReturnedIndex?: number;
   };
 };
@@ -440,12 +453,67 @@ type AccessibilityNode = {
 
 type ClickInput = {
   window: WindowRef;
-  x?: number;
-  y?: number;
+  x: number;
+  y: number;
   click_count?: number;
   mouse_button?: MouseButton;
-  element_index?: number;
   screenshotId?: string;
+};
+
+type ActivateWindowResult = {
+  ok: true;
+  window: WindowRef;
+  focused: boolean;
+  focusedSource: "GetForegroundWindow" | "assumed_after_successful_call";
+  foregroundWindowId?: number;
+  hint?: string;
+};
+
+type ClickResult = {
+  ok: true;
+  window: WindowRef;
+  screenPoint: { x: number; y: number };
+  clickPlan: {
+    moveFlags: number;
+    pixelX: number;
+    pixelY: number;
+    absoluteX: number;
+    absoluteY: number;
+    virtualScreen: {
+      originX: number;
+      originY: number;
+      width: number;
+      height: number;
+      source: "default" | "native";
+    };
+  };
+  activation: ActivateWindowResult & {
+    plan: {
+      targetWindow: WindowRef;
+      strategy: {
+        maxForegroundRetries: number;
+        unlockSequence: Array<"escape" | "alt">;
+        desktopFallback: boolean;
+        requiresAttachThreadInput: boolean;
+        attachThreadInputAvailable: boolean;
+        attachThreadInputMode: "native" | "approximate" | "unavailable";
+        attachThreadInputOnOffscreenWindow?: boolean;
+      };
+    };
+  };
+  postInputFocus?: {
+    focused: boolean;
+    matchesTarget: boolean;
+    foregroundWindowId?: number;
+  };
+  hitTest?: {
+    rawHwndAtPoint?: number;
+    hwndAtPoint?: number;
+    window?: WindowRef;
+    processName?: string;
+    matchesTarget?: boolean;
+  };
+  warnings?: string[];
 };
 
 type ClickElementInput = {

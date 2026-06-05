@@ -27,7 +27,8 @@ test("trace stays off by default and does not write evidence", async () => {
       }
     });
 
-    assert.deepEqual(response, { id: 11, ok: true, result: null });
+    assert.equal(response.ok, true);
+    assert.equal((response.result as { ok?: boolean }).ok, true);
     await assert.rejects(access(traceDir));
   } finally {
     await rm(sandboxDir, { recursive: true, force: true });
@@ -68,7 +69,9 @@ test("request-level trace meta writes success evidence under session and turn fo
       }
     });
 
-    assert.deepEqual(response, { id: 12, ok: true, result: null });
+    assert.equal(response.ok, true);
+    assert.equal((response.result as { screenPoint?: { x: number; y: number } }).screenPoint?.x, 144);
+    assert.equal((response.result as { screenPoint?: { x: number; y: number } }).screenPoint?.y, 288);
 
     const evidence = await readSingleEvidence(traceDir, "session-alpha", "turn-beta");
     assert.equal(evidence.actionType, "click");
@@ -92,7 +95,7 @@ test("request-level trace meta writes success evidence under session and turn fo
     assert.equal(evidence.payloadMetrics.thrownError, null);
     assert.deepEqual(
       evidence.artifacts.map((artifact: { kind: string }) => artifact.kind),
-      ["request", "activation", "pointer", "response"]
+      ["request", "activation", "pointer", "pointer-feedback", "response"]
     );
   } finally {
     await rm(sandboxDir, { recursive: true, force: true });
