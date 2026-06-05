@@ -9,6 +9,7 @@ import type { AppDescriptor, AppIdentifier } from "../../core/contracts/app.js";
 import type { WindowStateParams, WindowStateResult } from "../../core/contracts/capture.js";
 import type { GetWindowParams } from "../../core/contracts/discovery.js";
 import type {
+  ActivateWindowResult,
   ClickElementParams,
   PerformSecondaryActionParams,
   SetValueParams
@@ -412,12 +413,19 @@ export class PowerShellNativeBridge implements NativeBridge {
     this.currentTurnMeta = undefined;
   }
 
-  async activateWindow(window: WindowRef): Promise<void> {
+  async activateWindow(window: WindowRef): Promise<ActivateWindowResult> {
     await this.invoke({
       action: "activateWindow",
       window,
       meta: this.currentTurnMeta ?? null
     });
+    return {
+      ok: true,
+      window,
+      focused: true,
+      focusedSource: "assumed_after_successful_call",
+      hint: "PowerShell fallback completed activation without a structured focus report."
+    };
   }
 
   async sendText(text: string): Promise<void> {

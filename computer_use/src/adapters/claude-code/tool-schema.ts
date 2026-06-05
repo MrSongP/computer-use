@@ -67,6 +67,25 @@ const windowRefSchema: ToolInputSchema = {
     focused: {
       type: "boolean",
       description: "Optional focus flag carried forward from get_window_state."
+    },
+    focusedSource: {
+      type: "string",
+      enum: ["GetForegroundWindow", "assumed_after_successful_call"],
+      description: "How the focused flag was determined."
+    },
+    foregroundWindowId: {
+      type: "integer",
+      minimum: 0,
+      description: "Window handle that Windows reported as the foreground window when focus was checked."
+    },
+    rectCoordinateSpace: {
+      type: "string",
+      enum: ["virtual_screen", "unknown"],
+      description: "Coordinate space used by rect. virtual_screen can include negative x/y for secondary monitors."
+    },
+    rectOnVirtualScreen: {
+      type: "boolean",
+      description: "Whether rect intersects the current Windows virtual screen."
     }
   },
   required: ["id", "app"],
@@ -191,6 +210,39 @@ export function getClaudeToolOutputSchema(
           }
         },
         required: ["windows"],
+        additionalProperties: false
+      };
+
+    case "activate_window":
+      return {
+        type: "object",
+        description: "Structured activation result with focus evidence.",
+        properties: {
+          ok: {
+            type: "boolean",
+            description: "True when activation completed without an error."
+          },
+          window: windowRefSchema,
+          focused: {
+            type: "boolean",
+            description: "Whether the target was the foreground window after activation."
+          },
+          focusedSource: {
+            type: "string",
+            enum: ["GetForegroundWindow", "assumed_after_successful_call"],
+            description: "How the focus result was determined."
+          },
+          foregroundWindowId: {
+            type: "integer",
+            minimum: 0,
+            description: "Foreground window handle observed after activation."
+          },
+          hint: {
+            type: "string",
+            description: "Optional fallback guidance when the bridge cannot provide direct focus evidence."
+          }
+        },
+        required: ["ok", "window", "focused", "focusedSource"],
         additionalProperties: false
       };
 
@@ -351,7 +403,7 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
     case "type_text":
       return {
         type: "object",
-        description: "Type literal text into the target window.",
+        description: "Type literal text into the target window. If the last snapshot used gdi_fallback or an IME candidate UI is visible, prefer press_key for explicit character-by-character input.",
         properties: {
           window: windowRefSchema,
           text: {
@@ -466,7 +518,7 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
     case "activate_window":
       return {
         type: "object",
-        description: "Bring the target window to the foreground and restore it if minimized.",
+        description: "Bring the target window to the foreground and restore it if minimized. Returns a structured focus report; use focusedSource and foregroundWindowId instead of inferring success from null.",
         properties: {
           window: windowRefSchema
         },

@@ -105,6 +105,8 @@ native-host 编译顺序：
 2. 如果没有 .NET SDK，则退回 Windows .NET Framework `csc.exe`。
 3. `Windows.winmd` 会从本机 Windows Kits 目录动态扫描，避免 Win10/Win11 SDK 版本写死。
 
+当前 native host 的 .NET 目标框架是 `net8.0-windows10.0.19041.0`，用于启用 `Windows.Graphics.Capture` 所需的 Windows SDK C#/WinRT projections。修改 `.csproj` 的 `TargetFramework` 时，必须同步更新 `computer_use/src/windows/bridge/native-host-driver.ts` 里的 `NATIVE_HOST_TARGET_FRAMEWORK`，否则安装 smoke test 会启动旧输出目录。
+
 如果 fallback 编译提示缺少 `Windows.winmd`，安装 Windows 10/11 SDK，或设置 `COMPUTER_USE_WINDOWS_WINMD_PATH` 到本机实际 `Windows.winmd` 文件。
 
 ## PowerShell 兼容入口

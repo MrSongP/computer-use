@@ -13,6 +13,10 @@ interface KeyDefinition {
   readonly isExtended: boolean;
 }
 
+const KEY_ALIASES = new Map<string, readonly string[]>([
+  ["exclam", ["Shift_L", "1"]]
+]);
+
 const FORBIDDEN_KEYS = new Set([
   "super",
   "super_l",
@@ -99,24 +103,33 @@ export function parseKeyChord(input: string): ParsedChord {
     throw new Error("key chord is required");
   }
 
-  const keys = parts.map((part) => {
+  const keys = parts.flatMap((part) => {
     if (FORBIDDEN_KEYS.has(part.toLowerCase())) {
       throw new Error(`Forbidden key: ${part}`);
     }
 
-    const definition = KEY_DEFINITIONS.get(part);
-    if (!definition) {
-      throw new Error(`Unknown key: ${part}`);
+    const alias = KEY_ALIASES.get(part);
+    if (alias) {
+      return alias.map(resolveKeyDefinition);
     }
 
-    return {
-      key: part,
-      vkCode: definition.vkCode,
-      isExtended: definition.isExtended
-    };
+    return [resolveKeyDefinition(part)];
   });
 
   return { keys };
+}
+
+function resolveKeyDefinition(part: string): ParsedKey {
+  const definition = KEY_DEFINITIONS.get(part);
+  if (!definition) {
+    throw new Error(`Unknown key: ${part}`);
+  }
+
+  return {
+    key: part,
+    vkCode: definition.vkCode,
+    isExtended: definition.isExtended
+  };
 }
 
 export function normalizeKeyChord(input: string): readonly string[] {

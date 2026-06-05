@@ -77,6 +77,8 @@ npm run install:claude:compiled
 
 native-host 编译器会优先通过 .NET SDK 8+ 使用 `dotnet build`。如果没有安装 `dotnet`，则退回 Windows .NET Framework 的 `csc.exe`，并动态扫描本机已安装的 Windows SDK `Windows.winmd`。
 
+当前 .NET build 目标框架是 `net8.0-windows10.0.19041.0`，用于启用 `Windows.Graphics.Capture` 所需的 Windows SDK C#/WinRT projections。如果修改 native host 的目标框架，需要同步更新 `computer_use/src/windows/bridge/native-host-driver.ts` 里的 native-host 启动路径常量。
+
 如果 fallback 编译提示缺少 `Windows.winmd`，请安装 Windows 10/11 SDK，或把 `COMPUTER_USE_WINDOWS_WINMD_PATH` 设置为本机实际的 `Windows.winmd` 路径。
 
 ## 能力

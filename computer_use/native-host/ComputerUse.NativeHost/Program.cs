@@ -281,8 +281,7 @@ namespace ComputerUse.NativeHost
                     EndTurn();
                     return null;
                 case "activateWindow":
-                    ActivateWindow(GetWindowHandle(payload));
-                    return null;
+                    return ActivateWindow(GetWindowHandle(payload));
                 case "sendText":
                     SendText(ReadRequiredLiteralText(payload, "text"));
                     return null;
@@ -423,11 +422,12 @@ namespace ComputerUse.NativeHost
             escapeHook.Start();
         }
 
-        private void ActivateWindow(IntPtr hwnd)
+        private Dictionary<string, object> ActivateWindow(IntPtr hwnd)
         {
             EnsureTurnInitialized();
             ThrowIfInterrupted();
 
+            Dictionary<string, object> result = null;
             WithDpiGuard(delegate
             {
                 EnsureWindow(hwnd);
@@ -473,6 +473,7 @@ namespace ComputerUse.NativeHost
 
                         if (IsForegroundWindow(hwnd))
                         {
+                            result = BuildActivationResult(hwnd);
                             return;
                         }
 
@@ -483,6 +484,7 @@ namespace ComputerUse.NativeHost
 
                         if (IsForegroundWindow(hwnd))
                         {
+                            result = BuildActivationResult(hwnd);
                             return;
                         }
 
@@ -503,10 +505,21 @@ namespace ComputerUse.NativeHost
 
                     var details = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
                     details["windowId"] = hwnd.ToInt64();
+                    var failedForegroundWindow = GetForegroundWindow();
+                    if (failedForegroundWindow != IntPtr.Zero)
+                    {
+                        details["foregroundWindowId"] = failedForegroundWindow.ToInt64();
+                    }
+                    var guidance = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                    guidance["should_retry"] = true;
+                    guidance["user_visible_message"] = "The target window could not be brought to the foreground.";
+                    guidance["model_action"] =
+                        "Retry once after refreshing the window. If the window is visible, use window-relative click coordinates or wait for the foreground lock timeout before retrying activate_window.";
                     throw NativeHostException.NativeExecution(
                         "SetForegroundWindow",
                         "Failed to activate the target window after 20 foreground retries.",
-                        details
+                        details,
+                        guidance
                     );
                 }
                 finally
@@ -518,6 +531,23 @@ namespace ComputerUse.NativeHost
                     }
                 }
             });
+
+            return result ?? BuildActivationResult(hwnd);
+        }
+
+        private Dictionary<string, object> BuildActivationResult(IntPtr hwnd)
+        {
+            var foregroundWindow = GetForegroundWindow();
+            var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            result["ok"] = true;
+            result["window"] = BuildWindowStatePayload(hwnd, null);
+            result["focused"] = foregroundWindow != IntPtr.Zero && foregroundWindow == hwnd;
+            result["focusedSource"] = "GetForegroundWindow";
+            if (foregroundWindow != IntPtr.Zero)
+            {
+                result["foregroundWindowId"] = foregroundWindow.ToInt64();
+            }
+            return result;
         }
 
         private void SendKeyboardInputs(IList<KeyboardInputDto> inputs)
@@ -560,7 +590,8 @@ namespace ComputerUse.NativeHost
                 {
                     ThrowLastWin32Error(
                         "SendInput",
-                        "SendInput only sent " + sent + " of " + nativeInputs.Length + " keyboard input records."
+                        "SendInput only sent " + sent + " of " + nativeInputs.Length + " keyboard input records.",
+                        CreateKeyboardInputGuidance()
                     );
                 }
             });
@@ -586,7 +617,11 @@ namespace ComputerUse.NativeHost
                     throw NativeHostException.NativeExecution(
                         "OpenClipboard",
                         "Clipboard currently contains non-text data that cannot be restored safely for exact text paste.",
-                        details
+                        details,
+                        CreateTextInputGuidance(
+                            "The clipboard contains non-text data, so exact paste-based text injection was not attempted.",
+                            "Use press_key for character-by-character input, or use set_value when an accessibility ValuePattern element is available."
+                        )
                     );
                 }
 
@@ -656,7 +691,8 @@ namespace ComputerUse.NativeHost
                     {
                         ThrowLastWin32Error(
                             "SendInput",
-                            "SendInput only sent " + sent + " of " + nativeInputs.Length + " pointer input records."
+                            "SendInput only sent " + sent + " of " + nativeInputs.Length + " pointer input records.",
+                            CreatePointerInputGuidance()
                         );
                     }
 
@@ -675,7 +711,11 @@ namespace ComputerUse.NativeHost
             {
                 if (!SetCursorPos(targetX, targetY))
                 {
-                    ThrowLastWin32Error("SetCursorPos", "Failed to move the system cursor to the requested coordinates.");
+                    ThrowLastWin32Error(
+                        "SetCursorPos",
+                        "Failed to move the system cursor to the requested coordinates.",
+                        CreatePointerInputGuidance()
+                    );
                 }
 
                 Thread.Sleep(18);
@@ -689,7 +729,11 @@ namespace ComputerUse.NativeHost
             {
                 if (!SetCursorPos(targetX, targetY))
                 {
-                    ThrowLastWin32Error("SetCursorPos", "Failed to move the system cursor to the requested coordinates.");
+                    ThrowLastWin32Error(
+                        "SetCursorPos",
+                        "Failed to move the system cursor to the requested coordinates.",
+                        CreatePointerInputGuidance()
+                    );
                 }
 
                 Thread.Sleep(18);
@@ -717,7 +761,7 @@ namespace ComputerUse.NativeHost
                 var nextY = (int)Math.Round(start.y + (deltaY * eased) + (perpendicularY * arc));
                 if (!SetCursorPos(nextX, nextY))
                 {
-                    ThrowLastWin32Error("SetCursorPos", "Failed while animating the system cursor.");
+                    ThrowLastWin32Error("SetCursorPos", "Failed while animating the system cursor.", CreatePointerInputGuidance());
                 }
 
                 Thread.Sleep(stepDelayMs);
@@ -725,7 +769,11 @@ namespace ComputerUse.NativeHost
 
             if (!SetCursorPos(targetX, targetY))
             {
-                ThrowLastWin32Error("SetCursorPos", "Failed to move the system cursor to the requested coordinates.");
+                ThrowLastWin32Error(
+                    "SetCursorPos",
+                    "Failed to move the system cursor to the requested coordinates.",
+                    CreatePointerInputGuidance()
+                );
             }
 
             Thread.Sleep(18);
@@ -740,7 +788,11 @@ namespace ComputerUse.NativeHost
             {
                 if (!SetCursorPos(scroll.X, scroll.Y))
                 {
-                    ThrowLastWin32Error("SetCursorPos", "Failed to move the system cursor to the requested scroll point.");
+                    ThrowLastWin32Error(
+                        "SetCursorPos",
+                        "Failed to move the system cursor to the requested scroll point.",
+                        CreatePointerInputGuidance()
+                    );
                 }
 
                 Thread.Sleep(10);
@@ -760,7 +812,8 @@ namespace ComputerUse.NativeHost
                 {
                     ThrowLastWin32Error(
                         "SendInput",
-                        "SendInput only sent " + sent + " of " + nativeInputs.Length + " scroll input records."
+                        "SendInput only sent " + sent + " of " + nativeInputs.Length + " scroll input records.",
+                        CreatePointerInputGuidance()
                     );
                 }
             });
@@ -795,7 +848,11 @@ namespace ComputerUse.NativeHost
 
                 if (!SetCursorPos(drag.FromX, drag.FromY))
                 {
-                    ThrowLastWin32Error("SetCursorPos", "Failed to move the system cursor to the drag start point.");
+                    ThrowLastWin32Error(
+                        "SetCursorPos",
+                        "Failed to move the system cursor to the drag start point.",
+                        CreatePointerInputGuidance()
+                    );
                 }
 
                 var inputs = new List<INPUT>();
@@ -820,7 +877,7 @@ namespace ComputerUse.NativeHost
                     var sent = (int)SendInput(1, nativeInputs, Marshal.SizeOf(typeof(INPUT)));
                     if (sent != 1)
                     {
-                        ThrowLastWin32Error("SendInput", "Failed while sending a drag input record.");
+                        ThrowLastWin32Error("SendInput", "Failed while sending a drag input record.", CreatePointerInputGuidance());
                     }
                     if (delay > 0)
                     {
@@ -835,6 +892,11 @@ namespace ComputerUse.NativeHost
             EnsureTurnInitialized();
             ThrowIfInterrupted();
 
+            return BuildVirtualScreenMetricsPayload();
+        }
+
+        private Dictionary<string, object> BuildVirtualScreenMetricsPayload()
+        {
             var metrics = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             metrics["originX"] = GetSystemMetrics(76);
             metrics["originY"] = GetSystemMetrics(77);
@@ -1140,7 +1202,8 @@ namespace ComputerUse.NativeHost
                 throw NativeHostException.NativeExecution(
                     "getWindowState",
                     "Could not resolve window state for the requested handle.",
-                    details
+                    details,
+                    CreateStaleWindowGuidance()
                 );
             }
 
@@ -1202,7 +1265,8 @@ namespace ComputerUse.NativeHost
                     throw NativeHostException.NativeExecution(
                         "UIAutomation.InvokePattern",
                         "Element does not support InvokePattern or SelectionItemPattern and has no bounds for pointer fallback.",
-                        CreateDetails("elementIndex", ReadRequiredInt(payload, "element_index"))
+                        CreateDetails("elementIndex", ReadRequiredInt(payload, "element_index")),
+                        CreateUiaFallbackGuidance()
                     );
                 }
 
@@ -1228,7 +1292,8 @@ namespace ComputerUse.NativeHost
                 throw NativeHostException.NativeExecution(
                     "UIAutomation.ValuePattern",
                     "Element does not support ValuePattern.",
-                    CreateDetails("elementIndex", ReadRequiredInt(payload, "element_index"))
+                    CreateDetails("elementIndex", ReadRequiredInt(payload, "element_index")),
+                    CreateUiaFallbackGuidance()
                 );
             }
 
@@ -1398,8 +1463,29 @@ namespace ComputerUse.NativeHost
             payload["rect"] = RectToPayload(rect);
             payload["visible"] = IsWindowVisible(hwnd) && !IsWindowCloaked(hwnd);
             payload["minimized"] = IsIconic(hwnd);
-            payload["focused"] = IsForegroundWindow(hwnd);
+            var foregroundWindow = GetForegroundWindow();
+            payload["focused"] = foregroundWindow != IntPtr.Zero && foregroundWindow == hwnd;
+            payload["focusedSource"] = "GetForegroundWindow";
+            if (foregroundWindow != IntPtr.Zero)
+            {
+                payload["foregroundWindowId"] = foregroundWindow.ToInt64();
+            }
+            payload["rectCoordinateSpace"] = "virtual_screen";
+            payload["rectOnVirtualScreen"] = IsRectOnVirtualScreen(rect);
             return payload;
+        }
+
+        private bool IsRectOnVirtualScreen(RECT rect)
+        {
+            var originX = GetSystemMetrics(76);
+            var originY = GetSystemMetrics(77);
+            var right = originX + Math.Max(2, GetSystemMetrics(78));
+            var bottom = originY + Math.Max(2, GetSystemMetrics(79));
+
+            return rect.Right > originX &&
+                rect.Left < right &&
+                rect.Bottom > originY &&
+                rect.Top < bottom;
         }
 
         private Dictionary<string, object> CaptureWindowJpeg(IntPtr hwnd, int jpegQuality)
@@ -1414,7 +1500,8 @@ namespace ComputerUse.NativeHost
                     throw NativeHostException.NativeExecution(
                         "DwmGetWindowAttribute",
                         "Could not resolve bounds for window capture.",
-                        CreateDetails("windowId", hwnd.ToInt64())
+                        CreateDetails("windowId", hwnd.ToInt64()),
+                        CreateCaptureGuidance()
                     );
                 }
 
@@ -1818,7 +1905,8 @@ namespace ComputerUse.NativeHost
                 throw NativeHostException.NativeExecution(
                     "UIAutomation.ElementFromHandle",
                     "Failed to resolve the UIA root element for the target window.",
-                    CreateDetails("windowId", hwnd.ToInt64())
+                    CreateDetails("windowId", hwnd.ToInt64()),
+                    CreateUiaRefreshGuidance()
                 );
             }
 
@@ -2045,7 +2133,8 @@ namespace ComputerUse.NativeHost
                 throw NativeHostException.NativeExecution(
                     "UIAutomation.FindElement",
                     "Could not find an element for the requested element_index.",
-                    CreateDetails("elementIndex", elementIndex)
+                    CreateDetails("elementIndex", elementIndex),
+                    CreateUiaRefreshGuidance()
                 );
             }
 
@@ -2113,7 +2202,8 @@ namespace ComputerUse.NativeHost
                 throw NativeHostException.NativeExecution(
                     "UIAutomation.ScrollPattern",
                     "Element does not support ScrollPattern.",
-                    CreateDetails("elementIndex", elementIndex)
+                    CreateDetails("elementIndex", elementIndex),
+                    CreateUiaFallbackGuidance()
                 );
             }
 
@@ -2128,7 +2218,8 @@ namespace ComputerUse.NativeHost
                 throw NativeHostException.NativeExecution(
                     "UIAutomation.ExpandCollapsePattern",
                     "Element does not support ExpandCollapsePattern.",
-                    CreateDetails("elementIndex", elementIndex)
+                    CreateDetails("elementIndex", elementIndex),
+                    CreateUiaFallbackGuidance()
                 );
             }
 
@@ -2521,7 +2612,11 @@ namespace ComputerUse.NativeHost
 
             if (!created)
             {
-                ThrowLastWin32Error("CreateProcessW", "Failed to launch the requested application.");
+                ThrowLastWin32Error(
+                    "CreateProcessW",
+                    "Failed to launch the requested application.",
+                    CreateLaunchGuidance()
+                );
             }
 
             try
@@ -3288,11 +3383,16 @@ namespace ComputerUse.NativeHost
 
         private static void ThrowLastWin32Error(string api, string message)
         {
+            ThrowLastWin32Error(api, message, null);
+        }
+
+        private static void ThrowLastWin32Error(string api, string message, Dictionary<string, object> guidance)
+        {
             var error = Marshal.GetLastWin32Error();
             var details = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             details["win32Error"] = error;
             details["win32Message"] = new Win32Exception(error).Message;
-            throw NativeHostException.NativeExecution(api, message, details);
+            throw NativeHostException.NativeExecution(api, message, details, guidance);
         }
 
         private static Dictionary<string, object> CreateDetails(string key, object value)
@@ -3300,6 +3400,118 @@ namespace ComputerUse.NativeHost
             var details = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             details[key] = value;
             return details;
+        }
+
+        private static Dictionary<string, object> CreateGuidance(
+            bool shouldRetry,
+            string userVisibleMessage,
+            string modelAction,
+            string suggestedMethod,
+            Dictionary<string, object> suggestedParams
+        )
+        {
+            var guidance = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            guidance["should_retry"] = shouldRetry;
+            guidance["user_visible_message"] = userVisibleMessage;
+            guidance["model_action"] = modelAction;
+            if (!string.IsNullOrWhiteSpace(suggestedMethod))
+            {
+                guidance["suggested_tool_call"] = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { "method", suggestedMethod },
+                    { "params", suggestedParams ?? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) }
+                };
+            }
+
+            return guidance;
+        }
+
+        private static Dictionary<string, object> CreateStaleWindowGuidance()
+        {
+            return CreateGuidance(
+                true,
+                "The target window handle could not be resolved.",
+                "Refresh the target with list_apps or get_window using the last known id/app, then retry with the returned window object.",
+                "list_apps",
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+            );
+        }
+
+        private static Dictionary<string, object> CreateLaunchGuidance()
+        {
+            return CreateGuidance(
+                true,
+                "The requested application could not be launched.",
+                "Call list_apps to verify the app id. If using a path, verify that the executable path and working directory exist; if the app is already running, use the taskbar restore guidance instead of retrying forcefully.",
+                "list_apps",
+                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+            );
+        }
+
+        private static Dictionary<string, object> CreateCaptureGuidance()
+        {
+            return CreateGuidance(
+                true,
+                "The target window could not be captured from its current state.",
+                "If the window may be minimized, call activate_window, refresh with get_window_state, and retry. Otherwise refresh the window object with list_apps/get_window.",
+                null,
+                null
+            );
+        }
+
+        private static Dictionary<string, object> CreatePointerInputGuidance()
+        {
+            return CreateGuidance(
+                true,
+                "Pointer input could not be delivered at the requested coordinates.",
+                "Refresh get_window_state and use the returned state.window rect. Check rectCoordinateSpace/rectOnVirtualScreen before retrying window-relative click, scroll, or drag coordinates.",
+                null,
+                null
+            );
+        }
+
+        private static Dictionary<string, object> CreateKeyboardInputGuidance()
+        {
+            return CreateGuidance(
+                true,
+                "Keyboard input was not fully delivered.",
+                "Refresh focus with activate_window or click a stable editable point, then retry. For IME-heavy or gdi_fallback windows, prefer press_key character-by-character over type_text.",
+                null,
+                null
+            );
+        }
+
+        private static Dictionary<string, object> CreateTextInputGuidance(string userVisibleMessage, string modelAction)
+        {
+            return CreateGuidance(
+                false,
+                userVisibleMessage,
+                modelAction,
+                null,
+                null
+            );
+        }
+
+        private static Dictionary<string, object> CreateUiaRefreshGuidance()
+        {
+            return CreateGuidance(
+                true,
+                "The requested accessibility element could not be resolved.",
+                "Call get_window_state with include_text:true again and use an element_index from that latest response. Element indexes are snapshot-scoped.",
+                null,
+                null
+            );
+        }
+
+        private static Dictionary<string, object> CreateUiaFallbackGuidance()
+        {
+            return CreateGuidance(
+                true,
+                "The requested accessibility pattern is not available for this element.",
+                "Use the latest screenshot to click stable window-relative coordinates, or use keyboard navigation/press_key after focusing the relevant control.",
+                null,
+                null
+            );
         }
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -3550,13 +3762,23 @@ namespace ComputerUse.NativeHost
             Dictionary<string, object> details
         )
         {
+            return NativeExecution(api, message, details, null);
+        }
+
+        public static NativeHostException NativeExecution(
+            string api,
+            string message,
+            Dictionary<string, object> details,
+            Dictionary<string, object> guidance
+        )
+        {
             if (details == null)
             {
                 details = new Dictionary<string, object>();
             }
 
             details["api"] = api;
-            return new NativeHostException(message, "NATIVE_EXECUTION_ERROR", details, null);
+            return new NativeHostException(message, "NATIVE_EXECUTION_ERROR", details, guidance);
         }
 
         public static NativeHostException PolicyViolation(

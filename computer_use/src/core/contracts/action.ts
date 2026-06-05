@@ -34,6 +34,15 @@ export interface ActivateWindowParams {
   window: WindowRef;
 }
 
+export interface ActivateWindowResult {
+  ok: true;
+  window: WindowRef;
+  focused: boolean;
+  focusedSource: "GetForegroundWindow" | "assumed_after_successful_call";
+  foregroundWindowId?: number;
+  hint?: string;
+}
+
 export interface ElementIndexParams {
   window: WindowRef;
   element_index: number;

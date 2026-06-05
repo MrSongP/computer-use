@@ -91,7 +91,16 @@ test("action lane exposes activate_window through the same runtime seam", async 
     }
   });
 
-  assert.deepEqual(response, { id: 4, ok: true, result: null });
+  assert.deepEqual(response, {
+    id: 4,
+    ok: true,
+    result: {
+      ok: true,
+      window: { id: 101, app: "demo.exe" },
+      focused: true,
+      focusedSource: "assumed_after_successful_call"
+    }
+  });
   const bridge = scaffold.runtime.nativeBridge as MockNativeBridge;
   assert.deepEqual(
     bridge.getRecordedInvocations().map((entry) => entry.name),

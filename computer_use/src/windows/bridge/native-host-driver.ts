@@ -10,6 +10,7 @@ import type { AppDescriptor, AppIdentifier } from "../../core/contracts/app.js";
 import type { WindowStateParams, WindowStateResult } from "../../core/contracts/capture.js";
 import type { GetWindowParams } from "../../core/contracts/discovery.js";
 import type {
+  ActivateWindowResult,
   ClickElementParams,
   PerformSecondaryActionParams,
   SetValueParams
@@ -182,10 +183,13 @@ export class NativeHostBridge implements NativeBridge {
     });
   }
 
-  async activateWindow(window: WindowRef): Promise<void> {
-    return this.invokeOrFallback(
-      () => this.invokePrimary("activateWindow", { window, meta: this.currentTurnMeta ?? null }),
-      () => this.invokeFallback(() => this.fallback.activateWindow(window))
+  async activateWindow(window: WindowRef): Promise<ActivateWindowResult> {
+    return await this.invokeOrFallbackWithResult<ActivateWindowResult>(
+      () => this.invokePrimaryResult<ActivateWindowResult>("activateWindow", {
+        window,
+        meta: this.currentTurnMeta ?? null
+      }),
+      () => this.invokeFallbackWithResult(() => this.fallback.activateWindow(window))
     );
   }
 
@@ -353,6 +357,15 @@ export class NativeHostBridge implements NativeBridge {
     }
 
     await operation();
+  }
+
+  protected async invokeFallbackWithResult<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
+    if (!this.fallbackTurnStarted) {
+      this.fallback.beginTurn(this.currentTurnMeta);
+      this.fallbackTurnStarted = true;
+    }
+
+    return await operation();
   }
 
   private async ensureTurnStarted(): Promise<void> {

@@ -1,5 +1,5 @@
 import type { JsonRpcRequest, JsonRpcResponse } from "../../../../core/contracts/rpc.js";
-import type { ActivateWindowParams } from "../../../../core/contracts/action.js";
+import type { ActivateWindowParams, ActivateWindowResult } from "../../../../core/contracts/action.js";
 import type { ExecutionContext } from "../../../../core/runtime/execution-context.js";
 import { WindowActivationService } from "../../../../windows/activation/window-activator.js";
 import { activateWindowCapability, validateActivateWindowParams } from "./contract.js";
@@ -9,7 +9,7 @@ export class ActivateWindowHandler {
 
   constructor(private readonly context: ExecutionContext) {}
 
-  async handle(request: JsonRpcRequest<ActivateWindowParams>): Promise<JsonRpcResponse<null>> {
+  async handle(request: JsonRpcRequest<ActivateWindowParams>): Promise<JsonRpcResponse<ActivateWindowResult>> {
     return this.context.trace.runAction({
       actionType: this.definition.method,
       request,
@@ -25,15 +25,31 @@ export class ActivateWindowHandler {
 
         this.context.endTurn.begin(request.meta);
         const activationService = new WindowActivationService(this.context.nativeBridge);
-        const plan = await activationService.activate(params.window);
-        await trace.writeJsonArtifact("activation", "activation-plan.json", plan);
+        const activation = await activationService.activateWithReport(params.window);
+        await trace.writeJsonArtifact("activation", "activation-plan.json", activation.plan);
 
         return {
           id: request.id,
           ok: true,
-          result: null
+          result: toActivateWindowResult(activation)
         };
       }
     });
   }
+}
+
+function toActivateWindowResult(activation: ActivateWindowResult): ActivateWindowResult {
+  const result: ActivateWindowResult = {
+    ok: true,
+    window: activation.window,
+    focused: activation.focused,
+    focusedSource: activation.focusedSource
+  };
+  if (activation.foregroundWindowId !== undefined) {
+    result.foregroundWindowId = activation.foregroundWindowId;
+  }
+  if (activation.hint !== undefined) {
+    result.hint = activation.hint;
+  }
+  return result;
 }

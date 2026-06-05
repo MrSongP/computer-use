@@ -15,4 +15,8 @@ export interface WindowRef {
   visible?: boolean;
   minimized?: boolean;
   focused?: boolean;
+  focusedSource?: "GetForegroundWindow" | "assumed_after_successful_call";
+  foregroundWindowId?: number;
+  rectCoordinateSpace?: "virtual_screen" | "unknown";
+  rectOnVirtualScreen?: boolean;
 }

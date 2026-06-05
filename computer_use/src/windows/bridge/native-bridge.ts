@@ -3,6 +3,7 @@ import type { AppDescriptor, AppIdentifier } from "../../core/contracts/app.js";
 import type { WindowStateParams, WindowStateResult } from "../../core/contracts/capture.js";
 import type { GetWindowParams, LaunchAppMode } from "../../core/contracts/discovery.js";
 import type {
+  ActivateWindowResult,
   ClickElementParams,
   PerformSecondaryActionParams,
   SetValueParams
@@ -43,7 +44,7 @@ export interface NativeBridge {
   beginTurn(meta?: JsonRpcMeta): void;
   endTurn(): void;
   getVirtualScreenMetrics(): Promise<VirtualScreenMetrics>;
-  activateWindow(window: WindowRef): Promise<void>;
+  activateWindow(window: WindowRef): Promise<ActivateWindowResult>;
   sendText(text: string): Promise<void>;
   sendKeyboardInputs(inputs: readonly KeyboardInput[]): Promise<void>;
   sendPointerClick(click: PointerClick): Promise<void>;

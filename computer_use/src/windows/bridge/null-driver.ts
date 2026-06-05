@@ -3,6 +3,7 @@ import type { AppDescriptor, AppIdentifier } from "../../core/contracts/app.js";
 import type { WindowStateParams, WindowStateResult } from "../../core/contracts/capture.js";
 import type { GetWindowParams } from "../../core/contracts/discovery.js";
 import type {
+  ActivateWindowResult,
   ClickElementParams,
   PerformSecondaryActionParams,
   SetValueParams
@@ -51,8 +52,14 @@ export class NullNativeBridge implements NativeBridge {
     this.invocations.push({ name: "endTurn", payload: null });
   }
 
-  async activateWindow(window: WindowRef): Promise<void> {
+  async activateWindow(window: WindowRef): Promise<ActivateWindowResult> {
     this.invocations.push({ name: "activateWindow", payload: window });
+    return {
+      ok: true,
+      window,
+      focused: true,
+      focusedSource: "assumed_after_successful_call"
+    };
   }
 
   async getVirtualScreenMetrics(): Promise<VirtualScreenMetrics> {
@@ -131,7 +138,11 @@ export class NullNativeBridge implements NativeBridge {
         rect: { left: 10, top: 20, right: 650, bottom: 500 },
         visible: true,
         minimized: false,
-        focused: true
+        focused: true,
+        focusedSource: "assumed_after_successful_call",
+        foregroundWindowId: 101,
+        rectCoordinateSpace: "virtual_screen",
+        rectOnVirtualScreen: true
       },
       screenshot: params.include_screenshot === false
         ? undefined

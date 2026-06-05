@@ -70,7 +70,7 @@ IMPORTANT: do not control Windows apps through unrelated mechanisms before attem
 
 - Keep using the same selected `targetApp`, `targetWindow`, and latest `state.window` objects across the task. If `targetWindow` already exists, keep using it until a stale handle, activation failure, or missing window error requires recovery.
 - Choose one app from the latest `list_apps().apps` response. If it has exactly one suitable open window, call `get_window` on that returned window before the first snapshot. This resolves the chosen target into a current canonical object.
-- For app-control tasks, call `activate_window` once after selecting the target and before the first snapshot. Activation is idempotent and restores minimized windows. Skip this only when the task is explicitly passive inspection of multiple windows without stealing focus.
+- For app-control tasks, call `activate_window` once after selecting the target and before the first snapshot. Activation is idempotent, restores minimized windows, and returns a structured focus report. Skip this only when the task is explicitly passive inspection of multiple windows without stealing focus.
 - Use `list_windows` as a shortcut only when the task is explicitly about currently open windows or when recovering after you already know the app is running.
 - After `get_window_state`, replace `targetWindow` with the returned `state.window`; it is the canonical window object that was actually captured.
 - If you hit a stale handle error, recover with `get_window({ id: targetWindow.id, app: targetWindow.app })`. If you lost the binding, call `list_apps` again and choose from the fresh returned objects. Do not reconstruct a window from guessed ids.
@@ -169,12 +169,12 @@ GOOD: for canvas/hotkey apps, focus the work surface, clear modal state, then ba
 - When `include_text: true` may return a large tree, pass `max_elements`, `role_filter`, and `name_contains` to narrow the snapshot before inspecting fields. Do not dump the full tree unless it is small or the user explicitly needs it.
 - Screenshot data is returned in `screenshot.data` with `mime: "image/jpeg"` plus dimensions and `source`. Do not write screenshots to disk just to inspect them unless the user asked for saved evidence or trace is enabled for debugging.
 - If `get_window_state` fails, stop app input and report the exact error. Do not continue with stale coordinates or attempt to bypass.
-- The Computer Use tool will activate the target window before `click`, `drag`, `scroll`, `type_text`, `press_key`, `set_value`, `click_element`, `activate_window`, or `perform_secondary_action`. If activation or focus fails, refresh with `list_apps`/`get_window_state` and reselect the target instead of acting on a stale window.
+- The Computer Use tool will activate the target window before `click`, `drag`, `scroll`, `type_text`, `press_key`, `set_value`, `click_element`, `activate_window`, or `perform_secondary_action`. If activation or focus fails, inspect the returned `focusedSource`, `foregroundWindowId`, and hint, then refresh with `list_apps`/`get_window_state` and reselect the target instead of acting on a stale window.
 - If Computer Use reports that the Windows desktop is locked, stop immediately and ask the user to unlock the desktop. Do not try to interact through `LockApp.exe`.
 - When opening or launching a Windows app by name, call `list_apps` before launching anything.
 - Call `get_window_state` again only when you need to verify progress, focus may have changed, a modal or launcher may have appeared, the user interrupted, or the prior state is otherwise stale. Choose screenshot, accessibility text, or both based on the next decision.
-- `type_text` sends literal text. Use `press_key` for controls such as `Enter`, `Tab`, arrows, Escape, and keyboard chords instead of embedding control characters in a typed string.
-- Prefer X Window System keysym-style names for key input, especially `KP_0` through `KP_9` for apps that distinguish numpad keys from the number row. Common aliases such as `period`, `greater`, `less`, `comma`, `slash`, `question`, `Numpad_0`, `Numpad_Add`, `Numpad_Subtract`, `Numpad_Multiply`, `Numpad_Divide`, `Numpad_Decimal`, and `Numpad_Enter` are also supported. For shifted punctuation shortcuts, include `Shift`, for example `Control_L+Shift_L+period` for Ctrl+Shift+`.` / `>`.
+- `type_text` sends literal text. Use `press_key` for controls such as `Enter`, `Tab`, arrows, Escape, and keyboard chords instead of embedding control characters in a typed string. If the latest screenshot source is `gdi_fallback`, the target is a secondary-monitor or off-primary Electron/CEF app, or a Chinese Pinyin IME candidate bar is visible, prefer `press_key` with explicit characters and punctuation aliases such as `comma`, `space`, and `exclam`.
+- Prefer X Window System keysym-style names for key input, especially `KP_0` through `KP_9` for apps that distinguish numpad keys from the number row. Common aliases such as `period`, `greater`, `less`, `comma`, `slash`, `question`, `exclam`, `Numpad_0`, `Numpad_Add`, `Numpad_Subtract`, `Numpad_Multiply`, `Numpad_Divide`, `Numpad_Decimal`, and `Numpad_Enter` are also supported. For shifted punctuation shortcuts, include `Shift`, for example `Control_L+Shift_L+period` for Ctrl+Shift+`.` / `>`.
 - Prefer input injection over element index targeting. Coordinate `click`, `scroll`, and `drag` use window-relative pixels for the window captured by `get_window_state`. `(0, 0)` is the top-left of the window. If you do use an accessibility index, the property is `element_index`, not `element`.
 - `scroll` scrolls with input injection from a specific screenshot coordinate. Use `scroll({ window, x, y, scroll_x: 0, scroll_y: 600 })` to scroll down from `(x, y)`. Negative `scroll_y` scrolls up; negative `scroll_x` scrolls left. Do not pass `element_index` to `scroll`; if a specific pane needs focus, click it first with coordinates, then scroll from inside that pane.
 - Use keyboard navigation when it is faster than hunting UI pixels.
@@ -340,6 +340,10 @@ type WindowRef = {
   visible?: boolean;
   minimized?: boolean;
   focused?: boolean;
+  focusedSource?: "GetForegroundWindow" | "assumed_after_successful_call";
+  foregroundWindowId?: number;
+  rectCoordinateSpace?: "virtual_screen" | "unknown";
+  rectOnVirtualScreen?: boolean;
 };
 
 type AppDescriptor = {
@@ -387,6 +391,10 @@ type WindowStateResult = {
     visible: boolean;
     minimized: boolean;
     focused: boolean;
+    focusedSource?: "GetForegroundWindow" | "assumed_after_successful_call";
+    foregroundWindowId?: number;
+    rectCoordinateSpace?: "virtual_screen" | "unknown";
+    rectOnVirtualScreen?: boolean;
   };
   screenshot?: {
     data: string;
