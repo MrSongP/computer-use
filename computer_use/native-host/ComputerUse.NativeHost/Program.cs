@@ -654,6 +654,12 @@ namespace ComputerUse.NativeHost
             Dictionary<string, object> result = null;
             WithDpiGuard(delegate
             {
+                var preInputHitTest = BuildPointerHitTest(click, targetWindow);
+                if (PointerHitTestMissesTarget(preInputHitTest, targetWindow))
+                {
+                    throw CreatePointerTargetMismatchException(click, targetWindow, preInputHitTest);
+                }
+
                 MoveCursorHumanized(click.X, click.Y);
                 ThrowIfInterrupted();
 
@@ -728,7 +734,17 @@ namespace ComputerUse.NativeHost
                 postInputFocus["foregroundWindowId"] = foregroundWindow.ToInt64();
             }
             result["postInputFocus"] = postInputFocus;
+            result["hitTest"] = BuildPointerHitTest(click, targetWindow);
 
+            return result;
+        }
+
+        private Dictionary<string, object> BuildPointerHitTest(
+            PointerClickDto click,
+            IDictionary<string, object> targetWindow
+        )
+        {
+            var targetWindowId = ReadOptionalWindowId(targetWindow);
             var point = new POINT { x = click.X, y = click.Y };
             var rawHitWindow = WindowFromPoint(point);
             var hitWindow = rawHitWindow == IntPtr.Zero ? IntPtr.Zero : GetAncestor(rawHitWindow, 2);
@@ -761,9 +777,47 @@ namespace ComputerUse.NativeHost
             {
                 hitTest["matchesTarget"] = false;
             }
-            result["hitTest"] = hitTest;
+            return hitTest;
+        }
 
-            return result;
+        private static bool PointerHitTestMissesTarget(
+            IDictionary<string, object> hitTest,
+            IDictionary<string, object> targetWindow
+        )
+        {
+            if (!ReadOptionalWindowId(targetWindow).HasValue)
+            {
+                return false;
+            }
+
+            object matchesTarget;
+            return hitTest.TryGetValue("matchesTarget", out matchesTarget) &&
+                matchesTarget is bool &&
+                !(bool)matchesTarget;
+        }
+
+        private NativeHostException CreatePointerTargetMismatchException(
+            PointerClickDto click,
+            IDictionary<string, object> targetWindow,
+            Dictionary<string, object> hitTest
+        )
+        {
+            var details = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            details["x"] = click.X;
+            details["y"] = click.Y;
+            var targetWindowId = ReadOptionalWindowId(targetWindow);
+            if (targetWindowId.HasValue)
+            {
+                details["targetWindowId"] = targetWindowId.Value;
+            }
+            details["hitTest"] = hitTest;
+
+            return NativeHostException.NativeExecution(
+                "WindowFromPoint",
+                "Pointer click was refused because the point does not hit the target window.",
+                details,
+                CreatePointerTargetMismatchGuidance()
+            );
         }
 
         private void MoveCursorHumanized(int targetX, int targetY)
@@ -1291,7 +1345,27 @@ namespace ComputerUse.NativeHost
                 }
             }
 
-            if (includeText)
+            if (includeText && IsHungAppWindow(hwnd))
+            {
+                capture["textSource"] = "app_hung";
+                capture["elementsReturned"] = 0;
+                capture["elementsTotal"] = 0;
+                capture["elementsMatched"] = 0;
+                capture["truncated"] = false;
+                capture["partial"] = true;
+                degradedReasons.Add("app_hung");
+            }
+            else if (includeText && ShouldBlockAccessibilityText(stateWindow))
+            {
+                capture["textSource"] = "uia_blocked_chromium_im";
+                capture["elementsReturned"] = 0;
+                capture["elementsTotal"] = 0;
+                capture["elementsMatched"] = 0;
+                capture["truncated"] = false;
+                capture["partial"] = true;
+                degradedReasons.Add("uia_blocked_chromium_im");
+            }
+            else if (includeText)
             {
                 var text = BuildAccessibilityTree(hwnd, accessibilityOptions);
                 result["text"] = text.Root;
@@ -3473,6 +3547,33 @@ namespace ComputerUse.NativeHost
                 (Path.IsPathRooted(value) || value.StartsWith("\\\\", StringComparison.OrdinalIgnoreCase));
         }
 
+        private static bool ShouldBlockAccessibilityText(IDictionary<string, object> window)
+        {
+            if (window == null)
+            {
+                return false;
+            }
+
+            return IsRiskyChromiumImExecutable(ReadOptionalString(window, "app"));
+        }
+
+        private static bool IsRiskyChromiumImExecutable(string app)
+        {
+            if (string.IsNullOrWhiteSpace(app))
+            {
+                return false;
+            }
+
+            var fileName = Path.GetFileName(app.Trim());
+            return string.Equals(fileName, "QQ.exe", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(fileName, "QQNT.exe", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(fileName, "Weixin.exe", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(fileName, "WeChat.exe", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(fileName, "WXWork.exe", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(fileName, "Feishu.exe", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(fileName, "Lark.exe", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static INPUT CreateMouseInput(uint flags)
         {
             return CreateMouseInput(flags, 0, 0, 0);
@@ -3621,6 +3722,17 @@ namespace ComputerUse.NativeHost
                 true,
                 "Pointer input could not be delivered at the requested coordinates.",
                 "Refresh get_window_state and use the returned state.window rect. Check rectCoordinateSpace/rectOnVirtualScreen before retrying window-relative click, scroll, or drag coordinates.",
+                null,
+                null
+            );
+        }
+
+        private static Dictionary<string, object> CreatePointerTargetMismatchGuidance()
+        {
+            return CreateGuidance(
+                true,
+                "Pointer input was not sent because the requested point belongs to another window.",
+                "Refresh get_window_state and use the returned state.window rect before retrying. If the window is on a secondary monitor, verify rectCoordinateSpace and rectOnVirtualScreen before using window-relative coordinates.",
                 null,
                 null
             );

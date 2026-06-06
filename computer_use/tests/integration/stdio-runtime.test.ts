@@ -154,6 +154,102 @@ test("stdio runtime returns the canonical Escape interrupt error for interrupted
   }
 });
 
+test("stdio runtime force-cleans the active turn when physical Escape interrupts it", async () => {
+  const codexHome = await mkdtemp(path.join(tmpdir(), "computer-use-stdio-cleanup-"));
+  const previousCodexHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = codexHome;
+
+  try {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const scaffold = createScaffoldRuntime();
+    const transport = new StdioJsonRpcServer({ input, output });
+    const runtime = new StdioRpcRuntime(transport, scaffold.dispatcher, scaffold.runtime);
+    runtime.start();
+
+    const meta = {
+      codexTurnMetadata: {
+        session_id: "session-cleanup",
+        turn_id: "turn-cleanup"
+      }
+    };
+
+    const firstResponse = collectOutputLines(output, 1);
+    input.write(`${JSON.stringify({ id: 11, method: "list_windows", params: {}, meta })}\n`);
+    await firstResponse;
+
+    await runtime.triggerPhysicalEscape(meta);
+
+    const interruptResponse = collectOutputLines(output, 1);
+    input.write(
+      `${JSON.stringify({
+        id: 12,
+        method: "click",
+        params: { window: { id: 101, app: "demo.exe" }, x: 10, y: 20 },
+        meta
+      })}\n`
+    );
+
+    const [interruptLine] = await interruptResponse;
+    assert.deepEqual(JSON.parse(interruptLine!), {
+      id: 12,
+      ok: false,
+      code: "interrupted",
+      error: ESCAPE_ERROR_MESSAGE
+    });
+
+    const bridge = scaffold.runtime.nativeBridge as MockNativeBridge;
+    assert.deepEqual(
+      bridge.getRecordedInvocations().map((entry) => entry.name),
+      ["beginTurn", "listWindows", "resetTurn"]
+    );
+    assert.equal(bridge.getRecordedInvocations()[2]?.payload, "interrupted");
+  } finally {
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+    await rm(codexHome, { recursive: true, force: true });
+  }
+});
+
+test("stdio runtime resets an unfinished turn before starting a different turn", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const scaffold = createScaffoldRuntime();
+  const transport = new StdioJsonRpcServer({ input, output });
+  const runtime = new StdioRpcRuntime(transport, scaffold.dispatcher, scaffold.runtime);
+  runtime.start();
+
+  const responses = collectOutputLines(output, 2);
+  input.write(
+    `${JSON.stringify({
+      id: 21,
+      method: "list_windows",
+      params: {},
+      meta: { codexTurnMetadata: { session_id: "session-stale", turn_id: "turn-one" } }
+    })}\n`
+  );
+  input.write(
+    `${JSON.stringify({
+      id: 22,
+      method: "list_apps",
+      params: {},
+      meta: { codexTurnMetadata: { session_id: "session-stale", turn_id: "turn-two" } }
+    })}\n`
+  );
+
+  await responses;
+
+  const bridge = scaffold.runtime.nativeBridge as MockNativeBridge;
+  assert.deepEqual(
+    bridge.getRecordedInvocations().map((entry) => entry.name),
+    ["beginTurn", "listWindows", "resetTurn", "beginTurn", "listApps"]
+  );
+  assert.equal(bridge.getRecordedInvocations()[2]?.payload, "stale_turn");
+});
+
 async function collectOutputLines(stream: PassThrough, expectedCount: number): Promise<string[]> {
   const lines: string[] = [];
   let buffer = "";

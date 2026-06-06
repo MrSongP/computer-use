@@ -19,6 +19,9 @@
 
 - [ ] `trace-config`、evidence schema 和 artifact writer 仍可复用。
 - [ ] `end_turn`、interrupt 和 stdio lifecycle 没被破坏。
+- [ ] interrupted turn 仍会 `resetTurn("interrupted")`，未结束的旧 turn 仍会在新 turn 开始前 reset。
+- [ ] native-host reset 仍会 dispose resident host process，不把 queued work 带进下一轮。
+- [ ] `get_window_state` 仍会暴露 WGC fallback 诊断（`wgc_failed`）和窗口未响应状态（`window.health.hung`）。
 - [ ] 临时排障证据没有遗留在仓库里。
 
 ## 4. 关键验证

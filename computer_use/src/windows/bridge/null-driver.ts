@@ -53,6 +53,10 @@ export class NullNativeBridge implements NativeBridge {
     this.invocations.push({ name: "endTurn", payload: null });
   }
 
+  resetTurn(reason?: string): void {
+    this.invocations.push({ name: "resetTurn", payload: reason ?? null });
+  }
+
   async activateWindow(window: WindowRef): Promise<ActivateWindowResult> {
     this.invocations.push({ name: "activateWindow", payload: window });
     return {

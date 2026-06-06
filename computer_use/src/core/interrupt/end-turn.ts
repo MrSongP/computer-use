@@ -14,6 +14,7 @@ import { isSameTurnScope } from "./interrupt-scope.js";
 
 export class EndTurnCoordinator {
   private currentTurnMeta: JsonRpcMeta["codexTurnMetadata"] | undefined;
+  private readonly closedInterruptScopes = new Set<string>();
 
   constructor(
     private readonly lifecycle: LifecycleManager,
@@ -37,6 +38,7 @@ export class EndTurnCoordinator {
     const currentTurnMeta = this.lifecycle.getCurrentTurn()?.codexTurnMetadata ?? this.currentTurnMeta;
     if (currentTurnMeta) {
       await removeInterruptMarker(this.codexHome, currentTurnMeta);
+      this.closedInterruptScopes.delete(buildInterruptScopeKey(currentTurnMeta));
     }
 
     this.lifecycle.endTurn();
@@ -54,6 +56,7 @@ export class EndTurnCoordinator {
     if (this.interrupts.isInterrupted(scopeKey) || hasInterruptMarker(this.codexHome, turnMeta)) {
       this.interrupts.trigger(scopeKey);
       this.currentTurnMeta = turnMeta;
+      this.closeInterruptedTurn(scopeKey);
       return ESCAPE_ERROR_MESSAGE;
     }
 
@@ -74,7 +77,17 @@ export class EndTurnCoordinator {
     const scopeKey = buildInterruptScopeKey(turnMeta);
     this.interrupts.trigger(scopeKey);
     this.currentTurnMeta = turnMeta;
+    this.closeInterruptedTurn(scopeKey);
     return writeInterruptMarker(this.codexHome, turnMeta);
+  }
+
+  private closeInterruptedTurn(scopeKey: string): void {
+    if (this.closedInterruptScopes.has(scopeKey)) {
+      return;
+    }
+
+    this.closedInterruptScopes.add(scopeKey);
+    this.lifecycle.resetTurn("interrupted");
   }
 }
 

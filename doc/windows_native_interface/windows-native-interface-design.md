@@ -60,8 +60,10 @@
 - `click` / `scroll` / `drag` 的坐标 contract 是窗口相对坐标。
 - `press_key` / `type_text` 先激活窗口，再下沉到底层键盘输入。
 - `get_window_state` 是 capture + window canonicalization 的入口，不只是截图。
+- `get_window_state` 必须暴露 capture 降级和窗口健康状态；WGC fallback 用 `wgc_failed` 表示，未响应窗口用 `window.health.hung` 表示。
 - UIA 相关能力统一走 `ElementInteractionService`，不要把 pattern 分散到 adapter 或 handler。
 - turn 生命周期统一走 `lifecycle-manager.ts` 与 `end-turn.ts`，不要在单个 capability 里私自清理状态。
+- 中断 turn 和未正常结束的旧 turn 必须通过 `LifecycleManager.resetTurn` 清理；native-host reset 必须 dispose resident host process。
 
 ## 4. 主要验证面
 
@@ -76,6 +78,7 @@
   - `tests/integration/native-host-p5-smoke.test.ts`
 - lifecycle / trace：
   - `tests/unit/interrupt-files.test.ts`
+  - `tests/unit/native-host-driver.test.ts`
   - `tests/unit/trace-config.test.ts`
   - `tests/integration/trace-evidence.test.ts`
   - `tests/integration/stdio-runtime.test.ts`

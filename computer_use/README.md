@@ -65,6 +65,9 @@ The native host targets `net8.0-windows10.0.19041.0` for Windows SDK C#/WinRT pr
 - On Windows, `createWindowsRuntime()` defaults to the resident native-host bridge.
 - Tests use a mock bridge by default to avoid accidental real desktop input.
 - The native-host smoke test validates screenshots and UIA pattern actions against a Windows Forms fixture.
+- `get_window_state` exposes capture degradation diagnostics. When WGC fails and the native host falls back to GDI, the response carries `screenshot.degradedReason: "wgc_failed"`, `screenshot.gdiFallbackAt`, and `capture.degradedReasons`.
+- `get_window_state.window.health` exposes Win32 responsiveness status, including `hung` and `isResponding`, so callers can stop input when a target app is not responding.
+- Interrupted turns and stale unfinished turns are force-cleaned through the lifecycle manager. Native-host resets dispose the resident host process before the next turn continues.
 - `.mcp.json` exposes the MCP stdio server through `node ./dist/src/adapters/claude-code/mcp-entrypoint.js`.
 
 ## Trace / Debug

@@ -167,7 +167,7 @@ test("NativeHostBridge retries getWindowState without text after a native-host t
     return {
       window: {
         id: 68946,
-        app: "C:\\Program Files\\Tencent\\QQNT\\QQ.exe",
+        app: "C:\\Windows\\System32\\notepad.exe",
         rect: { left: 0, top: 0, right: 640, bottom: 480 },
         visible: true,
         minimized: false,
@@ -183,7 +183,7 @@ test("NativeHostBridge retries getWindowState without text after a native-host t
   const result = await bridge.getWindowState({
     window: {
       id: 68946,
-      app: "C:\\Program Files\\Tencent\\QQNT\\QQ.exe"
+      app: "C:\\Windows\\System32\\notepad.exe"
     },
     include_screenshot: false,
     include_text: true,
@@ -195,7 +195,7 @@ test("NativeHostBridge retries getWindowState without text after a native-host t
     params: {
       window: {
         id: 68946,
-        app: "C:\\Program Files\\Tencent\\QQNT\\QQ.exe"
+        app: "C:\\Windows\\System32\\notepad.exe"
       },
       include_screenshot: false,
       include_text: true,
@@ -207,7 +207,7 @@ test("NativeHostBridge retries getWindowState without text after a native-host t
     params: {
       window: {
         id: 68946,
-        app: "C:\\Program Files\\Tencent\\QQNT\\QQ.exe"
+        app: "C:\\Windows\\System32\\notepad.exe"
       },
       include_screenshot: false,
       include_text: false,
@@ -228,6 +228,176 @@ test("NativeHostBridge retries getWindowState without text after a native-host t
   });
 });
 
+test("NativeHostBridge blocks risky Chromium IM UIA text requests before native traversal", async () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge()
+  });
+  const methods: Array<{ method: string; payload: Record<string, unknown> }> = [];
+
+  (bridge as any).invokePrimaryResult = async (method: string, payload: Record<string, unknown>) => {
+    methods.push({ method, payload });
+    return {
+      window: {
+        id: 68946,
+        app: "D:\\QQ\\QQ.exe",
+        rect: { left: -2167, top: 300, right: -717, bottom: 1371 },
+        visible: true,
+        minimized: false,
+        focused: true
+      },
+      screenshot: {
+        data: "jpeg",
+        mime: "image/jpeg",
+        width: 1450,
+        height: 1071,
+        byteLength: 4,
+        source: "wgc"
+      },
+      capture: {
+        screenshotRequested: true,
+        textRequested: false,
+        screenshotSource: "wgc"
+      }
+    };
+  };
+
+  const result = await bridge.getWindowState({
+    window: {
+      id: 68946,
+      app: "D:\\QQ\\QQ.exe"
+    },
+    include_screenshot: true,
+    include_text: true,
+    max_elements: 300,
+    name_contains: "Desperate"
+  });
+
+  assert.equal(methods.length, 1);
+  assert.deepEqual(methods[0]?.payload, {
+    params: {
+      window: {
+        id: 68946,
+        app: "D:\\QQ\\QQ.exe"
+      },
+      include_screenshot: true,
+      include_text: false,
+      max_elements: 300,
+      name_contains: "Desperate"
+    },
+    meta: null
+  });
+  assert.equal(result.text, undefined);
+  assert.equal(result.capture.textRequested, true);
+  assert.equal(result.capture.textSource, "uia_blocked_chromium_im");
+  assert.deepEqual(result.capture.degradedReasons, ["uia_blocked_chromium_im"]);
+  assert.equal(result.capture.elementsReturned, 0);
+  assert.equal(result.screenshot?.source, "wgc");
+});
+
+test("NativeHostBridge preserves normal UIA text requests for non-risky apps", async () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge()
+  });
+  const methods: Array<{ method: string; payload: Record<string, unknown> }> = [];
+
+  (bridge as any).invokePrimaryResult = async (method: string, payload: Record<string, unknown>) => {
+    methods.push({ method, payload });
+    return {
+      window: {
+        id: 123,
+        app: "C:\\Windows\\System32\\notepad.exe",
+        rect: { left: 0, top: 0, right: 640, bottom: 480 },
+        visible: true,
+        minimized: false,
+        focused: true
+      },
+      text: {
+        index: 0,
+        role: "Window",
+        name: "Notepad",
+        children: []
+      },
+      capture: {
+        screenshotRequested: false,
+        textRequested: true,
+        textSource: "uia",
+        elementsReturned: 1,
+        elementsTotal: 1,
+        elementsMatched: 1
+      }
+    };
+  };
+
+  const result = await bridge.getWindowState({
+    window: {
+      id: 123,
+      app: "C:\\Windows\\System32\\notepad.exe"
+    },
+    include_screenshot: false,
+    include_text: true
+  });
+
+  assert.equal(methods.length, 1);
+  assert.deepEqual((methods[0]?.payload as any).params.include_text, true);
+  assert.equal(result.capture.textSource, "uia");
+  assert.equal(result.text?.name, "Notepad");
+});
+
+test("NativeHostBridge preserves WGC degradation diagnostics from native-host window state", async () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge()
+  });
+
+  (bridge as any).invokePrimaryResult = async () => ({
+    window: {
+      id: 68946,
+      app: "C:\\Program Files\\Tencent\\QQNT\\QQ.exe",
+      rect: { left: 0, top: 0, right: 640, bottom: 480 },
+      visible: true,
+      minimized: false,
+      focused: false,
+      health: {
+        hung: true,
+        isResponding: false,
+        lastInputIdleMs: 1234
+      }
+    },
+    screenshot: {
+      data: "jpeg",
+      mime: "image/jpeg",
+      width: 640,
+      height: 480,
+      byteLength: 4,
+      source: "gdi_fallback",
+      degradedReason: "wgc_failed",
+      gdiFallbackAt: "2026-06-06T00:00:00.000Z"
+    },
+    capture: {
+      screenshotRequested: true,
+      textRequested: false,
+      screenshotSource: "gdi_fallback",
+      screenshotDegradedReason: "wgc_failed",
+      degradedReasons: ["wgc_failed"]
+    }
+  });
+
+  const result = await bridge.getWindowState({
+    window: {
+      id: 68946,
+      app: "C:\\Windows\\System32\\notepad.exe"
+    },
+    include_screenshot: true,
+    include_text: false
+  });
+
+  assert.equal(result.window.health?.hung, true);
+  assert.equal(result.screenshot?.source, "gdi_fallback");
+  assert.equal(result.screenshot?.degradedReason, "wgc_failed");
+  assert.equal(result.screenshot?.gdiFallbackAt, "2026-06-06T00:00:00.000Z");
+  assert.deepEqual(result.capture.degradedReasons, ["wgc_failed"]);
+  assert.equal(result.capture.screenshotDegradedReason, "wgc_failed");
+});
+
 test("NativeHostBridge clears turnStarted when the host process is disposed", () => {
   const bridge = new NativeHostBridge({
     fallback: new NullNativeBridge()
@@ -236,6 +406,29 @@ test("NativeHostBridge clears turnStarted when the host process is disposed", ()
   (bridge as any).turnStarted = true;
   (bridge as any).disposeHostProcess();
 
+  assert.equal((bridge as any).turnStarted, false);
+});
+
+test("NativeHostBridge resetTurn immediately disposes the host process", () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge()
+  });
+  const fakeChild = createHungChild();
+
+  (bridge as any).hostProcess = fakeChild;
+  (bridge as any).currentTurnMeta = {
+    codexTurnMetadata: {
+      session_id: "session-reset",
+      turn_id: "turn-reset"
+    }
+  };
+  (bridge as any).turnStarted = true;
+
+  bridge.resetTurn("interrupted");
+
+  assert.equal(fakeChild.killCalled, true);
+  assert.equal((bridge as any).hostProcess, undefined);
+  assert.equal((bridge as any).currentTurnMeta, undefined);
   assert.equal((bridge as any).turnStarted, false);
 });
 

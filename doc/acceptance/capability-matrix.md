@@ -10,7 +10,7 @@
 | `list_windows` | `done` | `src/core/capabilities/discovery/list-windows` + `src/windows/discovery/window-discovery-service.ts` | `tests/unit/window-discovery-service.test.ts`、`tests/integration/codex-adapter.test.ts` |
 | `get_window` | `done` | `src/core/capabilities/discovery/get-window` + `src/windows/discovery/window-discovery-service.ts` | `tests/unit/get-window-contract.test.ts`、adapter/integration tests |
 | `launch_app` | `done` | `src/core/capabilities/discovery/launch-app` + `src/core/hooks/launch-app` + `src/windows/launch/app-launch-service.ts` | `tests/unit/app-launch-service.test.ts`（覆盖 hook rejection / taskbar guidance / `force_new`） |
-| `get_window_state` | `done` | `src/core/capabilities/capture/get-window-state` + `src/windows/capture/window-state-service.ts` | `tests/unit/window-state-service.test.ts`、`tests/integration/native-host-p5-smoke.test.ts` |
+| `get_window_state` | `done` | `src/core/capabilities/capture/get-window-state` + `src/windows/capture/window-state-service.ts` | `tests/unit/window-state-service.test.ts`、`tests/unit/native-host-driver.test.ts`、`tests/integration/native-host-p5-smoke.test.ts` |
 | `click` | `done` | `src/core/capabilities/actions/click` + `src/windows/input/pointer-input-service.ts` | `tests/unit/pointer-input-service.test.ts`、`tests/integration/action-lane.test.ts` |
 | `click_element` | `done` | `src/core/capabilities/actions/click-element` + `src/windows/uia/element-interaction-service.ts` | `tests/unit/element-interaction-service.test.ts`、`tests/integration/native-host-p5-smoke.test.ts` |
 | `press_key` | `done` | `src/core/capabilities/actions/press-key` + `src/windows/input/keyboard-input-service.ts` | `tests/unit/key-parser.test.ts`、`tests/unit/keyboard-input-service.test.ts` |
@@ -20,7 +20,7 @@
 | `drag` | `done` | `src/core/capabilities/actions/drag` + `src/windows/input/pointer-input-service.ts` | `tests/unit/pointer-input-service.test.ts` |
 | `perform_secondary_action` | `done` | `src/core/capabilities/actions/perform-secondary-action` + `src/windows/uia/element-interaction-service.ts` | `tests/unit/element-interaction-service.test.ts`、`tests/integration/native-host-p5-smoke.test.ts` |
 | `activate_window` | `done` | `src/core/capabilities/actions/activate-window` + `src/windows/activation/window-activator.ts` | `tests/integration/action-lane.test.ts` |
-| `end_turn` | `done` | `src/core/interrupt/end-turn.ts` + `src/core/runtime/lifecycle-manager.ts` | `tests/unit/interrupt-files.test.ts`、`tests/integration/stdio-runtime.test.ts` |
+| `end_turn` | `done` | `src/core/interrupt/end-turn.ts` + `src/core/runtime/lifecycle-manager.ts` + `src/windows/bridge/native-host-driver.ts` | `tests/unit/interrupt-files.test.ts`、`tests/unit/native-host-driver.test.ts`、`tests/integration/stdio-runtime.test.ts` |
 
 ## 2. 读这张表时的规则
 

@@ -414,6 +414,10 @@ export class PowerShellNativeBridge implements NativeBridge {
     this.currentTurnMeta = undefined;
   }
 
+  resetTurn(_reason?: string): void {
+    this.currentTurnMeta = undefined;
+  }
+
   async activateWindow(window: WindowRef): Promise<ActivateWindowResult> {
     await this.invoke({
       action: "activateWindow",

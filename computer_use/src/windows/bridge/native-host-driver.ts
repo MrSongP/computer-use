@@ -173,6 +173,19 @@ export class NativeHostBridge implements NativeBridge {
     });
   }
 
+  resetTurn(_reason?: string): void {
+    const shouldEndFallbackTurn = this.fallbackTurnStarted;
+    this.currentTurnMeta = undefined;
+    this.fallbackTurnStarted = false;
+    this.turnStarted = false;
+    this.lifecycleError = undefined;
+    this.disposeHostProcess();
+
+    if (shouldEndFallbackTurn) {
+      this.fallback.endTurn();
+    }
+  }
+
   async activateWindow(window: WindowRef): Promise<ActivateWindowResult> {
     return await this.invokeOrFallbackWithResult<ActivateWindowResult>(
       () => this.invokePrimaryResult<ActivateWindowResult>("activateWindow", {
@@ -265,6 +278,10 @@ export class NativeHostBridge implements NativeBridge {
   }
 
   async getWindowState(params: WindowStateParams): Promise<WindowStateResult> {
+    if (shouldBlockAccessibilityText(params)) {
+      return await this.getWindowStateWithTextBlocked(params);
+    }
+
     if (this.fallbackActive) {
       return await this.fallback.getWindowState(params);
     }
@@ -468,6 +485,23 @@ export class NativeHostBridge implements NativeBridge {
     } catch {
       return null;
     }
+  }
+
+  private async getWindowStateWithTextBlocked(params: WindowStateParams): Promise<WindowStateResult> {
+    const retryParams: WindowStateParams = {
+      ...params,
+      include_text: false
+    };
+
+    const partialResult = await this.invokeOrFallbackWithResult<WindowStateResult>(
+      () => this.invokePrimaryResult<WindowStateResult>("getWindowState", {
+        params: retryParams,
+        meta: this.currentTurnMeta ?? null
+      }),
+      () => this.invokeFallbackWithResult(() => this.fallback.getWindowState(retryParams))
+    );
+
+    return annotateWindowStateTextBlocked(partialResult);
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -871,6 +905,56 @@ function appendUniqueReason(
     result.push(reason);
   }
   return result;
+}
+
+function shouldBlockAccessibilityText(params: WindowStateParams): boolean {
+  if (params.include_text === false) {
+    return false;
+  }
+
+  return isRiskyChromiumImApp(params.window.app);
+}
+
+function isRiskyChromiumImApp(app: string | undefined): boolean {
+  if (!app) {
+    return false;
+  }
+
+  const normalized = app.toLowerCase();
+  const separators = /[\\/]/;
+  const executable = normalized.split(separators).pop() ?? normalized;
+  return [
+    "qq.exe",
+    "qqnt.exe",
+    "weixin.exe",
+    "wechat.exe",
+    "wxwork.exe",
+    "feishu.exe",
+    "lark.exe"
+  ].includes(executable);
+}
+
+function annotateWindowStateTextBlocked(result: WindowStateResult): WindowStateResult {
+  const degradedReasons = appendUniqueReason(
+    result.capture.degradedReasons,
+    "uia_blocked_chromium_im"
+  );
+
+  const { text: _text, ...withoutText } = result;
+  return {
+    ...withoutText,
+    capture: {
+      ...result.capture,
+      textRequested: true,
+      textSource: "uia_blocked_chromium_im",
+      elementsReturned: 0,
+      elementsTotal: 0,
+      elementsMatched: 0,
+      truncated: false,
+      partial: true,
+      degradedReasons
+    }
+  };
 }
 
 export class NativeHostBuildError extends Error {
