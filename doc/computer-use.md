@@ -14,7 +14,7 @@
 - `get_window_state` 会返回截图坐标映射和可见点击区域；trace 开启时直接回传截图/响应 artifact 绝对路径。`click` 默认仍使用 window-relative 坐标，也支持显式 `coordinateSpace: "screenshot"`。
 - 标准 Windows file/folder/save dialogs 可以通过 `select_file_in_dialog`、`select_folder_in_dialog`、`set_save_path_in_dialog` 完成本地路径选择；这些 helper 不会执行目标 app 的发送、上传或发布动作。
 - 风险 IM/Chromium app 的内容窗口仍避免 UIA traversal，但 native common dialog 会按窗口 class/title allowlist 放行。
-- `list_apps` 会额外暴露 `windows.shell.taskbar`，作为 taskbar/notification area 的正式截图与点击目标。
+- `list_apps` 会额外暴露 `windows.shell.taskbar`，作为 taskbar/notification area 的正式截图与点击目标；结果也带 `runtime.schemaVersion` / driver capability 信息，并保留 launcher、exe、process、taskbar label 等身份线索，方便把 `QQ` 这类友好入口和真实运行进程合并理解。当前用户会话里只有后台进程、没有可见窗口或 AppsFolder 入口的程序，也会作为 `executable_path` app 返回，并用 `isRunning: true`、`windows: []`、`processIds` 表达后台运行状态。
 - 使用插件时仍可结合宿主的 shell/bash/文件搜索等工具定位 exe、验证文件和排查环境；插件不是唯一可用工具集。
 - WGC smoke 在沙箱/受限 session 中不可用时不代表机器不支持 WGC；需要在沙箱外重新跑 native-host P5 smoke 再下结论。
 - 插件根目录是 `D:\Desktop\computer-use\computer_use`，不是根目录 `scripts` 下的官方兼容客户端包装。

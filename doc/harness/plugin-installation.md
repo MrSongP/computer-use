@@ -58,8 +58,10 @@ npm run install:claude
 3. `npm run build:native`
 4. `node .\scripts\smoke-claude-mcp.mjs`
 5. `codex plugin marketplace add D:\Desktop\computer-use`
-6. `codex plugin add computer-use@computer-use-local`
-7. Node 版 Codex doctor
+6. 按 Codex CLI 插件模型兼容安装：
+   - 旧版 CLI 如果仍支持 `codex plugin add/list/remove`，刷新并执行 `codex plugin add computer-use@computer-use-local`
+   - 新版 CLI 如果只暴露 `codex plugin marketplace`，直接维护 `~\.codex\config.toml` 里的 `[plugins."computer-use@computer-use-local"]` 和 `[[skills.config]]`
+7. Node 版 Codex doctor；doctor 同样按 CLI 能力选择 `plugin list` 或 config 检查
 
 `npm run install:claude` 会完成：
 

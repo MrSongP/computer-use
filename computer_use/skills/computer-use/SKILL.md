@@ -19,7 +19,7 @@ For this repository, the plugin implementation lives under `D:\Desktop\computer-
 - For normal Windows automation work, use the MCP tools exposed by this local plugin. Do not import the upstream bundled-client package, do not bootstrap the official OpenAI compatibility client, and do not route through repository wrapper scripts.
 - Using this plugin does not mean you are limited to this plugin's tools. Use other host tools when they are faster or more reliable for non-UI work, such as shell search to locate an executable path, file APIs to verify files, or logs/tests to diagnose installation state. Use Computer Use for Windows UI automation, screenshots, activation, and input.
 - This project intentionally keeps the upstream capability names where they fit, but the local contract shape is the source of truth:
-  - `list_apps` returns `{ apps }`, not a bare array.
+  - `list_apps` returns `{ apps, runtime? }`, not a bare array. `runtime` exposes the local schema version, bridge driver, and best-effort capability metadata for diagnosing plugin/documentation drift.
   - `launch_app` returns a structured launch report on success, including observation hints when a target window is seen; failures return explicit `code`, `details`, and guidance.
   - `get_window_state` returns `window`, optional `screenshot`, optional structured `text`, `capture`, and trace artifact paths when tracing is enabled.
   - `scroll` uses `scroll_x` / `scroll_y`, not camelCase scroll deltas.
@@ -52,6 +52,7 @@ Some Windows apps, especially WeChat / `Weixin.exe`, may already be running from
 
 - `launch_app` is policy-checked by default. Call it with the `list_apps` app id or executable path after discovery; the launch hook decides whether a cold launch is allowed.
 - If the runtime detects that the app is already running, `launch_app` refuses the duplicate cold launch and returns guidance telling you to restore the existing session from the Windows shell instead of starting another instance.
+- App identity may include `aliases`, `processNames`, `taskbarLabel`, and an inferred `executablePath`. Use these fields to connect friendly launchers such as `QQ` with the real running process such as `QQ.exe`.
 - The Windows shell target is exposed through `list_apps` as `windows.shell.taskbar` with display name `Windows Taskbar`. Use that target with `get_window_state` and `click` when the hook tells you to inspect the taskbar or notification area.
 - Use `launch_mode: "force_new"` only when the user explicitly asks for a new instance. Do not set `force_new` just because the app is already running.
 - For WeChat specifically, treat consumer WeChat (`Weixin.exe`, display name `微信`) and enterprise WeChat / WXWork (`WXWork.exe`, `企业微信`) as different apps. Do not restore or send through the wrong one just because another Tencent app is already visible.
@@ -158,6 +159,7 @@ GOOD: for canvas/hotkey apps, focus the work surface, clear modal state, then ba
 - Start automating Windows apps by finding the app with `list_apps`, then selecting one of its open windows.
 - `get_window_state` does not need to activate the window, so it can be used to inspect multiple windows without stealing focus. Input methods activate their target window first and fail if activation fails. Use `activate_window` only when you explicitly need to bring a window foreground without taking an input action.
 - Use `list_apps` for default app discovery, app identity, launch candidates, running state, usage metadata, and each app's open windows. Prefer the returned `list_apps` id as the app identifier whenever a suitable candidate is available, even if the app is not currently running.
+- `list_apps` includes process-only entries for executable paths that are running in the current user session even when they have no targetable window and no AppsFolder launcher. Treat `isRunning: true`, `windows: []`, `executablePath`, and `processIds` as evidence that the program is running in the background.
 - If `list_apps` shows an app as running but with no visible windows, treat it as a tray / hidden-session candidate. Call `launch_app` once, and if the hook rejects with `tray_restore_required`, move to the taskbar shell target instead of retrying the launch.
 - Use `list_windows` only when the task is explicitly about currently open windows or when you already know the target app is running and need a fresh flat window list.
 - Occluded windows can be snapshotted without activation. Minimized windows may be listed, but Windows.Graphics.Capture does not capture them reliably while minimized. Input methods activate and restore their target automatically. If a passive snapshot fails after starting from a minimized window, call `activate_window`, refresh the object with `get_window({ id, app })`, and retry once.
@@ -174,6 +176,7 @@ GOOD: for canvas/hotkey apps, focus the work surface, clear modal state, then ba
 - Accessibility text is returned as a structured node tree under `text`. Element indexes are stable only for the latest `get_window_state({ include_text: true })` result.
 - When `include_text: true` may return a large tree, pass `max_elements`, `role_filter`, and `name_contains` to narrow the snapshot before inspecting fields. Do not dump the full tree unless it is small or the user explicitly needs it.
 - For Chromium Embedded IM apps such as QQ, WeChat, Enterprise WeChat, Feishu, and Lark, avoid UIA traversal on app content windows. Standard Windows common dialogs owned by those apps, such as file pickers and save dialogs, may expose UIA safely and can be handled with the common-dialog helpers.
+- For IM file attachments when the native picker path is unavailable or less stable, a host-assisted file clipboard workflow is acceptable: verify the local file path with host filesystem tools, prepare a Windows file-drop clipboard list with host APIs, paste into the already verified IM input area with Computer Use, inspect the resulting confirmation modal or file card, and keep the final send/upload action subject to the normal confirmation policy. This workflow must only prepare local clipboard state and paste it; it must not bypass destination verification or click the final send action on its own.
 - Screenshot data is returned in `screenshot.data` with `mime: "image/jpeg"` plus dimensions and `source`. `get_window_state` also returns screenshot coordinate metadata; coordinate clicks are window-relative by default, and `click({ coordinateSpace: "screenshot" })` should be used only with the `state.window` returned by that snapshot. Do not write screenshots to disk just to inspect them unless the user asked for saved evidence or trace is enabled for debugging.
 - When trace is enabled, inspect `state.trace.screenshotPath`, `state.trace.rawScreenshotPath`, and `state.trace.responsePath` instead of searching the filesystem for trace artifacts.
 - If `get_window_state` fails, stop app input and report the exact error. Do not continue with stale coordinates or attempt to bypass.
@@ -375,6 +378,10 @@ type AppDescriptor = {
   id: AppIdentifier;
   displayName?: string;
   executablePath?: string;
+  aliases?: AppIdentifier[];
+  processNames?: string[];
+  processIds?: number[];
+  taskbarLabel?: string;
   isRunning?: boolean;
   lastUsedDate?: string;
   useCount?: number;
@@ -388,6 +395,11 @@ type AppDescriptor = {
 
 type ListAppsResult = {
   apps: AppDescriptor[];
+  runtime?: {
+    schemaVersion: "computer-use/list-apps/v1";
+    driverName?: string;
+    capabilities?: Record<string, unknown>;
+  };
 };
 
 type GetWindowInput = {
@@ -415,6 +427,13 @@ type LaunchAppResult = {
     | { action: "list_windows" }
     | { action: "pollListWindows"; timeoutMs: number; intervalMs: number }
     | { action: "pollListApps"; timeoutMs: number; intervalMs: number }
+    | {
+        action: "restoreFromTaskbar";
+        taskbarAppId: string;
+        taskbarLabel?: string;
+        app?: AppIdentifier;
+        executablePath?: string;
+      }
     | { action: "launchByExecutablePath"; executablePath: string }
   >;
 };
