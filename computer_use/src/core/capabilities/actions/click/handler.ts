@@ -72,9 +72,12 @@ function toClickResult(execution: PointerClickExecution): ClickResult {
     warnings.push("click_likely_missed_target");
   }
 
-  return {
+    return {
     ok: true,
     window: execution.activation.window,
+    coordinateSpace: execution.coordinateSpace,
+    requestedPoint: execution.requestedPoint,
+    windowPoint: execution.windowPoint,
     screenPoint: {
       x: execution.pointerClick.x,
       y: execution.pointerClick.y

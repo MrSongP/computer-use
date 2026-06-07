@@ -31,14 +31,20 @@ export class GetWindowStateHandler {
         const service = new WindowStateService(this.context.nativeBridge);
         const state = await service.getWindowState(params);
         trace.setTargetWindow(state.window);
-        await writeWindowStateTraceArtifacts(trace, state, {
+        const tracePaths = await writeWindowStateTraceArtifacts(trace, state, {
           attachScreenshotTo: "before"
         });
+        const result = Object.keys(tracePaths).length > 0
+          ? {
+              ...state,
+              trace: tracePaths
+            }
+          : state;
 
         return {
           id: request.id,
           ok: true,
-          result: stripTraceOnlyWindowStateFields(state)
+          result: stripTraceOnlyWindowStateFields(result)
         };
       }
     });

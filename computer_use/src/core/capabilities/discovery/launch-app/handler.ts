@@ -1,5 +1,5 @@
 import type { JsonRpcRequest, JsonRpcResponse } from "../../../../core/contracts/rpc.js";
-import type { LaunchAppParams } from "../../../../core/contracts/discovery.js";
+import type { LaunchAppParams, LaunchAppResult } from "../../../../core/contracts/discovery.js";
 import type { ExecutionContext } from "../../../../core/runtime/execution-context.js";
 import { AppLaunchService } from "../../../../windows/launch/app-launch-service.js";
 import { launchAppCapability, validateLaunchAppParams } from "./contract.js";
@@ -9,7 +9,7 @@ export class LaunchAppHandler {
 
   constructor(private readonly context: ExecutionContext) {}
 
-  async handle(request: JsonRpcRequest<LaunchAppParams>): Promise<JsonRpcResponse<null>> {
+  async handle(request: JsonRpcRequest<LaunchAppParams>): Promise<JsonRpcResponse<LaunchAppResult>> {
     return this.context.trace.runAction({
       actionType: this.definition.method,
       request,
@@ -30,7 +30,7 @@ export class LaunchAppHandler {
         return {
           id: request.id,
           ok: true,
-          result: null
+          result: plan
         };
       }
     });

@@ -80,17 +80,32 @@ test("native host closes the P5 exit with real WGC and UIA smoke coverage", asyn
         title: smokeInfo.title
       };
 
-      const initialState = (await client.request("getWindowState", {
-        params: {
-          window,
-          include_screenshot: true,
-          include_text: true,
-          max_elements: 128
+      let initialState: any;
+      try {
+        initialState = (await client.request("getWindowState", {
+          params: {
+            window,
+            include_screenshot: true,
+            include_text: true,
+            max_elements: 128
+          }
+        })).result;
+      } catch (error) {
+        if (isSandboxedDesktopCaptureError(error)) {
+          t.skip(
+            "WGC capture and GDI fallback are unavailable in this sandboxed/restricted desktop session; " +
+            "rerun this smoke outside the sandbox before treating WGC as unsupported on this machine"
+          );
+          return;
         }
-      })).result;
+        throw error;
+      }
 
       if (initialState.capture.screenshotSource !== "wgc") {
-        t.skip(`WGC capture is unavailable in this desktop session; got ${initialState.capture.screenshotSource}`);
+        t.skip(
+          `WGC capture is unavailable in this desktop session; got ${initialState.capture.screenshotSource}. ` +
+          "Rerun outside the sandbox before treating WGC as unsupported on this machine."
+        );
         return;
       }
 
@@ -293,7 +308,9 @@ class NativeHostClient {
       return;
     }
 
-    pending.reject(new Error(payload.error ?? "native host request failed"));
+    pending.reject(new Error(
+      `${payload.error ?? "native host request failed"}\nresponse: ${JSON.stringify(payload)}\nstderr: ${this.stderr}`
+    ));
   }
 }
 
@@ -397,6 +414,16 @@ function flattenNodes(root: any): any[] {
     nodes.push(...flattenNodes(child));
   }
   return nodes;
+}
+
+function isSandboxedDesktopCaptureError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.includes("[WGC-DIAG]") &&
+    error.message.includes("GraphicsCaptureSession.IsSupported") &&
+    error.message.includes("句柄无效");
 }
 
 function requireNode(nodes: any[], predicate: (node: any) => boolean, description: string): any {

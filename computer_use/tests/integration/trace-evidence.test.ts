@@ -222,6 +222,13 @@ test("trace captures get_window_state screenshot artifacts including the raw sna
     });
 
     assert.equal(response.ok, true);
+    const result = response.ok ? response.result as any : null;
+    assert.equal(typeof result?.trace?.screenshotPath, "string");
+    assert.equal(typeof result?.trace?.rawScreenshotPath, "string");
+    assert.equal(typeof result?.trace?.responsePath, "string");
+    await access(result.trace.screenshotPath);
+    await access(result.trace.rawScreenshotPath);
+    await access(result.trace.responsePath);
     const evidence = await readSingleEvidence(traceDir, "session-capture", "turn-window-state");
     assert.equal(evidence.actionType, "get_window_state");
     assert.equal(evidence.status, "success");

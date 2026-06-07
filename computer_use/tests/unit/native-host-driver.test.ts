@@ -294,6 +294,84 @@ test("NativeHostBridge blocks risky Chromium IM UIA text requests before native 
   assert.equal(result.screenshot?.source, "wgc");
 });
 
+test("NativeHostBridge allows standard dialogs owned by risky Chromium IM apps", async () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge()
+  });
+  const methods: Array<{ method: string; payload: Record<string, unknown> }> = [];
+
+  (bridge as any).invokePrimaryResult = async (method: string, payload: Record<string, unknown>) => {
+    methods.push({ method, payload });
+    return {
+      window: {
+        id: 68947,
+        app: "D:\\QQ\\QQ.exe",
+        title: "Open",
+        className: "#32770",
+        rect: { left: 100, top: 100, right: 900, bottom: 700 },
+        visible: true,
+        minimized: false,
+        focused: true
+      },
+      text: {
+        index: 0,
+        role: "Window",
+        name: "Open",
+        children: [
+          {
+            index: 1,
+            role: "Edit",
+            name: "File name:",
+            children: []
+          },
+          {
+            index: 2,
+            role: "Button",
+            name: "Open",
+            children: []
+          }
+        ]
+      },
+      capture: {
+        screenshotRequested: false,
+        textRequested: true,
+        textSource: "uia",
+        elementsReturned: 3,
+        elementsTotal: 3,
+        elementsMatched: 3
+      }
+    };
+  };
+
+  const result = await bridge.getWindowState({
+    window: {
+      id: 68947,
+      app: "D:\\QQ\\QQ.exe",
+      title: "Open",
+      className: "#32770"
+    },
+    include_screenshot: false,
+    include_text: true
+  });
+
+  assert.equal(methods.length, 1);
+  assert.deepEqual(methods[0]?.payload, {
+    params: {
+      window: {
+        id: 68947,
+        app: "D:\\QQ\\QQ.exe",
+        title: "Open",
+        className: "#32770"
+      },
+      include_screenshot: false,
+      include_text: true
+    },
+    meta: null
+  });
+  assert.equal(result.capture.textSource, "uia");
+  assert.equal(result.text?.children[0]?.role, "Edit");
+});
+
 test("NativeHostBridge preserves normal UIA text requests for non-risky apps", async () => {
   const bridge = new NativeHostBridge({
     fallback: new NullNativeBridge()

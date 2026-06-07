@@ -9,13 +9,27 @@ test("validateClickParams accepts coordinate mode", () => {
     validateClickParams({
       window: windowRef,
       x: 12,
-      y: 34
+      y: 34,
+      coordinateSpace: "screenshot"
     }),
     {
       window: windowRef,
       x: 12,
-      y: 34
+      y: 34,
+      coordinateSpace: "screenshot"
     }
+  );
+});
+
+test("validateClickParams rejects malformed coordinateSpace", () => {
+  assert.throws(
+    () => validateClickParams({
+      window: windowRef,
+      x: 12,
+      y: 34,
+      coordinateSpace: "screen"
+    } as any),
+    /coordinateSpace/
   );
 });
 

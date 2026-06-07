@@ -7,6 +7,7 @@ import { MethodRegistry } from "./core/dispatcher/method-registry.js";
 import { ActivateWindowHandler } from "./core/capabilities/actions/activate-window/handler.js";
 import { ClickHandler } from "./core/capabilities/actions/click/handler.js";
 import { ClickElementHandler } from "./core/capabilities/actions/click-element/handler.js";
+import { CommonDialogPathHandler } from "./core/capabilities/actions/common-dialog-path/handler.js";
 import { DragHandler } from "./core/capabilities/actions/drag/handler.js";
 import { PerformSecondaryActionHandler } from "./core/capabilities/actions/perform-secondary-action/handler.js";
 import { PressKeyHandler } from "./core/capabilities/actions/press-key/handler.js";
@@ -42,6 +43,9 @@ function createRuntime(nativeBridge: NativeBridge, options: RuntimeOptions = {})
 
   const click = new ClickHandler(runtime);
   const clickElement = new ClickElementHandler(runtime);
+  const selectFileInDialog = new CommonDialogPathHandler(runtime, "select_file_in_dialog");
+  const selectFolderInDialog = new CommonDialogPathHandler(runtime, "select_folder_in_dialog");
+  const setSavePathInDialog = new CommonDialogPathHandler(runtime, "set_save_path_in_dialog");
   const drag = new DragHandler(runtime);
   const getWindowState = new GetWindowStateHandler(runtime);
   const performSecondaryAction = new PerformSecondaryActionHandler(runtime);
@@ -58,6 +62,9 @@ function createRuntime(nativeBridge: NativeBridge, options: RuntimeOptions = {})
   capabilities.register(activateWindow.definition);
   capabilities.register(click.definition);
   capabilities.register(clickElement.definition);
+  capabilities.register(selectFileInDialog.definition);
+  capabilities.register(selectFolderInDialog.definition);
+  capabilities.register(setSavePathInDialog.definition);
   capabilities.register(drag.definition);
   capabilities.register(getWindow.definition);
   capabilities.register(getWindowState.definition);
@@ -73,6 +80,9 @@ function createRuntime(nativeBridge: NativeBridge, options: RuntimeOptions = {})
   methods.register(activateWindow.definition.method, activateWindow.handle.bind(activateWindow));
   methods.register(click.definition.method, click.handle.bind(click));
   methods.register(clickElement.definition.method, clickElement.handle.bind(clickElement));
+  methods.register(selectFileInDialog.definition.method, selectFileInDialog.handle.bind(selectFileInDialog));
+  methods.register(selectFolderInDialog.definition.method, selectFolderInDialog.handle.bind(selectFolderInDialog));
+  methods.register(setSavePathInDialog.definition.method, setSavePathInDialog.handle.bind(setSavePathInDialog));
   methods.register(drag.definition.method, drag.handle.bind(drag));
   methods.register(getWindow.definition.method, getWindow.handle.bind(getWindow));
   methods.register(getWindowState.definition.method, getWindowState.handle.bind(getWindowState));

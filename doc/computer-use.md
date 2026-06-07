@@ -10,8 +10,13 @@
   - capture / UIA：`get_window_state`、`click_element`、`set_value`、`perform_secondary_action`
   - action / lifecycle：`activate_window`、`click`、`press_key`、`type_text`、`scroll`、`drag`、`end_turn`
 - trace/debug 已经收敛为共享能力，可通过 env、runtime config 或 request meta 开关。
-- `launch_app` 现在默认是 policy hook：发现已有实例时会拒绝重复冷启动，并返回“转去任务栏/托盘恢复现有会话”的 guidance；只有显式要求时才应该 `force_new`。
+- `launch_app` 现在默认是 policy hook：发现已有实例时会拒绝重复冷启动，并返回“转去任务栏/托盘恢复现有会话”的 guidance；只有显式要求时才应该 `force_new`。成功时返回结构化 launch report，不再返回无信息的 `null`，并会短暂观察匹配窗口、返回 `observedWindows` 与 `followUpActions`。
+- `get_window_state` 会返回截图坐标映射和可见点击区域；trace 开启时直接回传截图/响应 artifact 绝对路径。`click` 默认仍使用 window-relative 坐标，也支持显式 `coordinateSpace: "screenshot"`。
+- 标准 Windows file/folder/save dialogs 可以通过 `select_file_in_dialog`、`select_folder_in_dialog`、`set_save_path_in_dialog` 完成本地路径选择；这些 helper 不会执行目标 app 的发送、上传或发布动作。
+- 风险 IM/Chromium app 的内容窗口仍避免 UIA traversal，但 native common dialog 会按窗口 class/title allowlist 放行。
 - `list_apps` 会额外暴露 `windows.shell.taskbar`，作为 taskbar/notification area 的正式截图与点击目标。
+- 使用插件时仍可结合宿主的 shell/bash/文件搜索等工具定位 exe、验证文件和排查环境；插件不是唯一可用工具集。
+- WGC smoke 在沙箱/受限 session 中不可用时不代表机器不支持 WGC；需要在沙箱外重新跑 native-host P5 smoke 再下结论。
 - 插件根目录是 `D:\Desktop\computer-use\computer_use`，不是根目录 `scripts` 下的官方兼容客户端包装。
 - Claude Code 安装入口是 repo-local marketplace：`D:\Desktop\computer-use\.claude-plugin\marketplace.json`。
 - Claude Code 的用户级权限入口是：`%USERPROFILE%\.claude\settings.json`。安装脚本会把 `mcp__plugin_computer-use_computer-use` 合并进去，避免 `computer-use` MCP 工具每一步都要求点 `Yes`。

@@ -912,7 +912,7 @@ function shouldBlockAccessibilityText(params: WindowStateParams): boolean {
     return false;
   }
 
-  return isRiskyChromiumImApp(params.window.app);
+  return isRiskyChromiumImApp(params.window.app) && !looksLikeStandardDialog(params.window);
 }
 
 function isRiskyChromiumImApp(app: string | undefined): boolean {
@@ -932,6 +932,27 @@ function isRiskyChromiumImApp(app: string | undefined): boolean {
     "feishu.exe",
     "lark.exe"
   ].includes(executable);
+}
+
+function looksLikeStandardDialog(window: WindowStateParams["window"]): boolean {
+  const title = (window.title ?? "").trim().toLowerCase();
+  if (title.length === 0) {
+    return false;
+  }
+  return [
+    "open",
+    "save as",
+    "save",
+    "select folder",
+    "browse",
+    "print",
+    "打开",
+    "另存为",
+    "保存",
+    "选择文件夹",
+    "浏览",
+    "打印"
+  ].some((candidate) => title.includes(candidate));
 }
 
 function annotateWindowStateTextBlocked(result: WindowStateResult): WindowStateResult {

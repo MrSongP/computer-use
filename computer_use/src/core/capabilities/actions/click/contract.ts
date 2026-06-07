@@ -20,7 +20,7 @@ export function validateClickParams(params: ClickParams): ClickParams {
   const candidate = ensureObject(params, "click params are required");
   ensureNoUnknownKeys(
     candidate,
-    ["window", "x", "y", "click_count", "mouse_button", "screenshotId"],
+    ["window", "x", "y", "coordinateSpace", "click_count", "mouse_button", "screenshotId"],
     "click"
   );
   ensureWindowRef(candidate.window, "click");
@@ -37,5 +37,12 @@ export function validateClickParams(params: ClickParams): ClickParams {
   );
   ensureFiniteNumber(params.x, "click requires finite x and y coordinates");
   ensureFiniteNumber(params.y, "click requires finite x and y coordinates");
+  if (
+    params.coordinateSpace !== undefined &&
+    params.coordinateSpace !== "window" &&
+    params.coordinateSpace !== "screenshot"
+  ) {
+    throw new Error("click coordinateSpace must be window or screenshot when provided");
+  }
   return params;
 }

@@ -8,15 +8,19 @@ export async function writeWindowStateTraceArtifacts(
     label?: string;
     attachScreenshotTo?: "before" | "after";
   } = {}
-): Promise<void> {
+): Promise<WindowStateTraceArtifactPaths> {
   const filePrefix = options.label ? `${options.label}-` : "";
   const kindPrefix = options.label ? `${options.label}-` : "";
+  const paths: WindowStateTraceArtifactPaths = {};
 
-  await trace.writeJsonArtifact(
+  const response = await trace.writeJsonArtifact(
     `${kindPrefix}window-state`,
     `${filePrefix}window-state.json`,
     redactWindowStatePayloads(state)
   );
+  if (response?.absolutePath) {
+    paths.responsePath = response.absolutePath;
+  }
 
   if (state.text) {
     await trace.writeJsonArtifact(`${kindPrefix}uia`, `${filePrefix}uia-tree.json`, state.text);
@@ -24,12 +28,15 @@ export async function writeWindowStateTraceArtifacts(
 
   if (state.screenshot?.raw) {
     const rawBytes = Buffer.from(state.screenshot.raw.data, "base64");
-    await trace.writeBinaryArtifact(
+    const rawScreenshot = await trace.writeBinaryArtifact(
       `${kindPrefix}raw-screenshot`,
       `${filePrefix}window-state-raw.png`,
       rawBytes,
       state.screenshot.raw.mime
     );
+    if (rawScreenshot?.absolutePath) {
+      paths.rawScreenshotPath = rawScreenshot.absolutePath;
+    }
   }
 
   if (state.screenshot) {
@@ -47,7 +54,18 @@ export async function writeWindowStateTraceArtifacts(
     if (options.attachScreenshotTo === "after") {
       trace.attachAfterScreenshot(screenshot ?? null);
     }
+    if (screenshot?.absolutePath) {
+      paths.screenshotPath = screenshot.absolutePath;
+    }
   }
+
+  return paths;
+}
+
+export interface WindowStateTraceArtifactPaths {
+  screenshotPath?: string;
+  rawScreenshotPath?: string;
+  responsePath?: string;
 }
 
 export function stripTraceOnlyWindowStateFields(state: WindowStateResult): WindowStateResult {

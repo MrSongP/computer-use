@@ -1,5 +1,6 @@
 import type { LaunchAppMode, LaunchAppParams } from "../../../../core/contracts/discovery.js";
 import {
+  ensureFiniteNumber,
   ensureNoUnknownKeys,
   ensureNonEmptyString,
   ensureObject
@@ -14,13 +15,15 @@ export const launchAppCapability: CapabilityDefinition = {
 
 export function validateLaunchAppParams(params: LaunchAppParams): LaunchAppParams {
   const candidate = ensureObject(params, "launch_app params are required");
-  ensureNoUnknownKeys(candidate, ["app", "launch_mode"], "launch_app");
+  ensureNoUnknownKeys(candidate, ["app", "launch_mode", "observe_timeout_ms"], "launch_app");
   const app = ensureNonEmptyString(candidate.app, "launch_app requires a non-empty app identifier");
   const launchMode = validateLaunchAppMode(candidate.launch_mode);
+  const observeTimeoutMs = validateObserveTimeoutMs(candidate.observe_timeout_ms);
 
   return {
     app,
-    ...(launchMode ? { launch_mode: launchMode } : {})
+    ...(launchMode ? { launch_mode: launchMode } : {}),
+    ...(observeTimeoutMs !== undefined ? { observe_timeout_ms: observeTimeoutMs } : {})
   };
 }
 
@@ -34,4 +37,12 @@ function validateLaunchAppMode(value: unknown): LaunchAppMode | undefined {
   }
 
   throw new Error("launch_app launch_mode must be reuse_or_launch or force_new when provided");
+}
+
+function validateObserveTimeoutMs(value: unknown): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const timeout = ensureFiniteNumber(value, "launch_app observe_timeout_ms must be a finite number when provided");
+  return Math.max(0, Math.min(5000, Math.trunc(timeout)));
 }

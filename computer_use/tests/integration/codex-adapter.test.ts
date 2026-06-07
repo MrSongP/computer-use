@@ -91,10 +91,15 @@ test("codex adapter drives the helper end-to-end and writes trace artifacts by s
     };
     assert.equal(apps.apps[0]?.id, "demo.exe");
 
-    assert.deepEqual(
-      await adapter.invoke("launch_app", { app: "demo.exe", launch_mode: "force_new" }, { meta: turnTwoMeta }),
-      null
-    );
+    const launchResult = await adapter.invoke("launch_app", { app: "demo.exe", launch_mode: "force_new" }, { meta: turnTwoMeta }) as any;
+    assert.equal(launchResult.ok, true);
+    assert.equal(launchResult.app, "demo.exe");
+    assert.equal(launchResult.strategy, "executable_path");
+    assert.equal(launchResult.launchMode, "force_new");
+    assert.equal(launchResult.disposition, "observed_window");
+    assert.deepEqual(launchResult.observedWindows, [
+      { id: 101, app: "demo.exe", title: "Demo Window" }
+    ]);
     assert.deepEqual(
       await adapter.invoke(
         "click_element",

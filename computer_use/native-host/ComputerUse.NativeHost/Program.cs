@@ -1182,6 +1182,7 @@ namespace ComputerUse.NativeHost
 
             if (LooksLikeExecutablePath(normalized))
             {
+                ValidateExecutableLaunchTarget(normalized);
                 LaunchProcess(normalized, null, Path.GetDirectoryName(normalized));
                 return;
             }
@@ -1333,7 +1334,7 @@ namespace ComputerUse.NativeHost
 
             if (includeScreenshot)
             {
-                var screenshot = CaptureWindowJpeg(hwnd, jpegQuality);
+                var screenshot = CaptureWindowJpeg(hwnd, jpegQuality, requestedApp);
                 result["screenshot"] = screenshot;
                 capture["screenshotSource"] = screenshot["source"];
                 object screenshotDegradedReason;
@@ -1579,10 +1580,12 @@ namespace ComputerUse.NativeHost
             var payload = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             payload["id"] = hwnd.ToInt64();
             payload["app"] = appId;
+            payload["className"] = GetWindowClassName(hwnd);
             if (!string.IsNullOrWhiteSpace(title))
             {
                 payload["title"] = title;
             }
+            AddWindowRelationshipPayload(payload, hwnd);
 
             return payload;
         }
@@ -1595,7 +1598,7 @@ namespace ComputerUse.NativeHost
             }
 
             RECT rect;
-            if (!TryGetWindowBounds(hwnd, out rect))
+            if (!TryGetInteractiveWindowBounds(hwnd, requestedApp, out rect))
             {
                 return null;
             }
@@ -1614,6 +1617,7 @@ namespace ComputerUse.NativeHost
             var payload = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             payload["id"] = hwnd.ToInt64();
             payload["app"] = appId;
+            payload["className"] = GetWindowClassName(hwnd);
             payload["title"] = IsTaskbarRequested(requestedApp)
                 ? TaskbarWindowTitle
                 : (GetWindowTitle(hwnd) ?? string.Empty);
@@ -1630,6 +1634,7 @@ namespace ComputerUse.NativeHost
             payload["rectCoordinateSpace"] = "virtual_screen";
             payload["rectOnVirtualScreen"] = IsRectOnVirtualScreen(rect);
             payload["health"] = BuildWindowHealthPayload(hwnd);
+            AddWindowRelationshipPayload(payload, hwnd);
             return payload;
         }
 
@@ -1669,14 +1674,14 @@ namespace ComputerUse.NativeHost
                 rect.Top < bottom;
         }
 
-        private Dictionary<string, object> CaptureWindowJpeg(IntPtr hwnd, int jpegQuality)
+        private Dictionary<string, object> CaptureWindowJpeg(IntPtr hwnd, int jpegQuality, string requestedApp)
         {
             RECT rect = new RECT();
             Dictionary<string, object> result = null;
 
             WithDpiGuard(delegate
             {
-                if (!TryGetWindowBounds(hwnd, out rect))
+                if (!TryGetInteractiveWindowBounds(hwnd, requestedApp, out rect))
                 {
                     throw NativeHostException.NativeExecution(
                         "DwmGetWindowAttribute",
@@ -2829,6 +2834,32 @@ namespace ComputerUse.NativeHost
             }
         }
 
+        private void ValidateExecutableLaunchTarget(string executablePath)
+        {
+            var workingDirectory = Path.GetDirectoryName(executablePath);
+            var executableExists = File.Exists(executablePath);
+            var workingDirectoryExists = !string.IsNullOrWhiteSpace(workingDirectory) &&
+                Directory.Exists(workingDirectory);
+
+            if (executableExists && workingDirectoryExists)
+            {
+                return;
+            }
+
+            var details = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            details["app"] = executablePath;
+            details["executableExists"] = executableExists;
+            details["workingDirectory"] = string.IsNullOrWhiteSpace(workingDirectory) ? string.Empty : workingDirectory;
+            details["workingDirectoryExists"] = workingDirectoryExists;
+
+            throw NativeHostException.NativeExecution(
+                "launch_app",
+                "The requested executable path or its working directory does not exist.",
+                details,
+                CreateLaunchGuidance()
+            );
+        }
+
         private void EnsureTurnInitialized()
         {
             if (!turnInitialized)
@@ -3449,6 +3480,27 @@ namespace ComputerUse.NativeHost
             return rect.Right > rect.Left && rect.Bottom > rect.Top;
         }
 
+        private static bool TryGetInteractiveWindowBounds(IntPtr hwnd, string requestedApp, out RECT rect)
+        {
+            if (IsTaskbarRequested(requestedApp))
+            {
+                return TryGetWindowRectBounds(hwnd, out rect);
+            }
+
+            return TryGetWindowBounds(hwnd, out rect);
+        }
+
+        private static bool TryGetWindowRectBounds(IntPtr hwnd, out RECT rect)
+        {
+            rect = new RECT();
+            if (!GetWindowRect(hwnd, out rect))
+            {
+                return false;
+            }
+
+            return rect.Right > rect.Left && rect.Bottom > rect.Top;
+        }
+
         private static string GetWindowTitle(IntPtr hwnd)
         {
             var length = GetWindowTextLengthW(hwnd);
@@ -3517,14 +3569,7 @@ namespace ComputerUse.NativeHost
 
         private static bool IsFilteredClassName(IntPtr hwnd)
         {
-            var builder = new StringBuilder(256);
-            var copied = GetClassNameW(hwnd, builder, builder.Capacity);
-            if (copied <= 0)
-            {
-                return false;
-            }
-
-            var className = builder.ToString();
+            var className = GetWindowClassName(hwnd);
             foreach (var candidate in HiddenClassNames)
             {
                 if (string.Equals(candidate, className, StringComparison.OrdinalIgnoreCase))
@@ -3534,6 +3579,29 @@ namespace ComputerUse.NativeHost
             }
 
             return false;
+        }
+
+        private static string GetWindowClassName(IntPtr hwnd)
+        {
+            var builder = new StringBuilder(256);
+            var copied = GetClassNameW(hwnd, builder, builder.Capacity);
+            return copied <= 0 ? string.Empty : builder.ToString();
+        }
+
+        private static void AddWindowRelationshipPayload(Dictionary<string, object> payload, IntPtr hwnd)
+        {
+            var owner = GetWindow(hwnd, 4);
+            if (owner != IntPtr.Zero)
+            {
+                payload["ownerWindowId"] = owner.ToInt64();
+                payload["modalForWindowId"] = owner.ToInt64();
+            }
+
+            var parent = GetParent(hwnd);
+            if (parent != IntPtr.Zero)
+            {
+                payload["parentWindowId"] = parent.ToInt64();
+            }
         }
 
         private static bool LooksLikeExecutablePath(string value)
@@ -3554,7 +3622,30 @@ namespace ComputerUse.NativeHost
                 return false;
             }
 
-            return IsRiskyChromiumImExecutable(ReadOptionalString(window, "app"));
+            return IsRiskyChromiumImExecutable(ReadOptionalString(window, "app")) &&
+                !IsStandardCommonDialogWindow(window);
+        }
+
+        private static bool IsStandardCommonDialogWindow(IDictionary<string, object> window)
+        {
+            var className = ReadOptionalString(window, "className");
+            if (!string.Equals(className, "#32770", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var title = (ReadOptionalString(window, "title") ?? string.Empty).Trim();
+            return title.IndexOf("Open", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                title.IndexOf("Save", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                title.IndexOf("Browse", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                title.IndexOf("Select", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                title.IndexOf("Print", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                title.IndexOf("打开", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                title.IndexOf("保存", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                title.IndexOf("另存为", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                title.IndexOf("选择", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                title.IndexOf("浏览", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                title.IndexOf("打印", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsRiskyChromiumImExecutable(string app)
@@ -3874,6 +3965,12 @@ namespace ComputerUse.NativeHost
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern int GetClassNameW(IntPtr hWnd, StringBuilder className, int maxCount);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr GetParent(IntPtr hWnd);
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);

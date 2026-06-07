@@ -17,6 +17,7 @@ export interface WindowRef {
   id: number;
   app: AppIdentifier;
   title?: string;
+  className?: string;
   rect?: WindowRect;
   visible?: boolean;
   minimized?: boolean;
@@ -25,5 +26,13 @@ export interface WindowRef {
   foregroundWindowId?: number;
   rectCoordinateSpace?: "virtual_screen" | "unknown";
   rectOnVirtualScreen?: boolean;
+  visibleClickableRegion?: WindowRect;
+  screenshotCoordinateScale?: {
+    x: number;
+    y: number;
+  };
+  ownerWindowId?: number;
+  parentWindowId?: number;
+  modalForWindowId?: number;
   health?: WindowHealth;
 }

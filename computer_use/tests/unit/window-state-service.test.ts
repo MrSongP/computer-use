@@ -87,3 +87,61 @@ test("window state service forwards accessibility filters and max elements", asy
     }
   ]);
 });
+
+test("window state service annotates screenshot coordinate mapping and visible region", async () => {
+  const bridge = {
+    async getVirtualScreenMetrics() {
+      return {
+        originX: 0,
+        originY: 0,
+        width: 1920,
+        height: 1080,
+        source: "native" as const
+      };
+    },
+    async getWindowState(params: WindowStateParams): Promise<WindowStateResult> {
+      return {
+        window: {
+          ...params.window,
+          rect: { left: -10, top: 20, right: 90, bottom: 120 },
+          visible: true,
+          minimized: false,
+          focused: true
+        },
+        screenshot: {
+          data: Buffer.from("mock-jpeg").toString("base64"),
+          mime: "image/jpeg",
+          width: 45,
+          height: 100,
+          byteLength: 9,
+          source: "mock"
+        },
+        capture: {
+          screenshotRequested: true,
+          textRequested: false
+        }
+      };
+    }
+  } as NativeBridge;
+
+  const service = new WindowStateService(bridge);
+  const state = await service.getWindowState({
+    window: { id: 101, app: "demo.exe" },
+    include_text: false
+  });
+
+  assert.deepEqual(state.window.visibleClickableRegion, {
+    left: 10,
+    top: 0,
+    right: 100,
+    bottom: 100
+  });
+  assert.deepEqual(state.window.screenshotCoordinateScale, { x: 2, y: 1 });
+  assert.equal(state.screenshot?.coordinateSpace, "screenshot");
+  assert.deepEqual(state.screenshot?.coordinateMapping?.origin, {
+    windowX: 10,
+    windowY: 0,
+    screenX: 0,
+    screenY: 20
+  });
+});

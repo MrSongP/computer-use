@@ -77,15 +77,17 @@ test("AppLaunchService can bypass the reuse hook when a new instance is explicit
     }
   });
 
-  assert.deepEqual(await service.launch({
+  const result = await service.launch({
     app: "C:\\Windows\\notepad.exe",
     launch_mode: "force_new"
-  }), {
-    app: "C:\\Windows\\notepad.exe",
-    strategy: "executable_path",
-    launchMode: "force_new",
-    disposition: "delegated_launch"
   });
+  assert.equal(result.ok, true);
+  assert.equal(result.app, "C:\\Windows\\notepad.exe");
+  assert.equal(result.strategy, "executable_path");
+  assert.equal(result.launchMode, "force_new");
+  assert.equal(result.disposition, "delegated_launch");
+  assert.deepEqual(result.observedWindows, []);
+  assert.equal(result.followUpActions?.some((action) => action.action === "pollListWindows"), true);
   assert.deepEqual(launched, [
     { app: "C:\\Windows\\notepad.exe", launchMode: "force_new" }
   ]);
@@ -102,15 +104,52 @@ test("AppLaunchService delegates to the bridge when no existing session is found
     }
   });
 
-  assert.deepEqual(await service.launch({ app: "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App" }), {
-    app: "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
-    strategy: "app_user_model_id",
-    launchMode: "reuse_or_launch",
-    disposition: "delegated_launch"
-  });
+  const result = await service.launch({ app: "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App" });
+  assert.equal(result.ok, true);
+  assert.equal(result.app, "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App");
+  assert.equal(result.strategy, "app_user_model_id");
+  assert.equal(result.launchMode, "reuse_or_launch");
+  assert.equal(result.disposition, "delegated_launch");
+  assert.deepEqual(result.observedWindows, []);
   assert.deepEqual(launched, [
     { app: "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App", launchMode: "reuse_or_launch" }
   ]);
+});
+
+test("AppLaunchService reports observed windows and resolved executable path", async () => {
+  const service = new AppLaunchService({
+    async listApps() {
+      return {
+        apps: [
+          {
+            id: "C:\\Windows\\notepad.exe",
+            displayName: "Notepad",
+            executablePath: "C:\\Windows\\notepad.exe",
+            isRunning: false,
+            activationModel: "executable_path",
+            windows: [{ id: 77, app: "C:\\Windows\\notepad.exe", title: "Untitled - Notepad" }]
+          }
+        ]
+      };
+    },
+    async launchApp() {}
+  });
+
+  const result = await service.launch({
+    app: "C:\\Windows\\notepad.exe",
+    launch_mode: "force_new",
+    observe_timeout_ms: 0
+  });
+
+  assert.equal(result.disposition, "observed_window");
+  assert.equal(result.resolvedExecutablePath, "C:\\Windows\\notepad.exe");
+  assert.deepEqual(result.observedWindows, [
+    { id: 77, app: "C:\\Windows\\notepad.exe", title: "Untitled - Notepad" }
+  ]);
+  assert.deepEqual(result.followUpActions?.find((action) => action.action === "launchByExecutablePath"), {
+    action: "launchByExecutablePath",
+    executablePath: "C:\\Windows\\notepad.exe"
+  });
 });
 
 test("launch app validators reject pid identifiers", () => {

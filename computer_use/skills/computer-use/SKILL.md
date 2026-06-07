@@ -17,9 +17,11 @@ For this repository, the plugin implementation lives under `D:\Desktop\computer-
 
 - Treat `computer_use\` as the actual plugin root for this project version. Its key files are `.codex-plugin\plugin.json`, `.claude-plugin\plugin.json`, `.mcp.json`, `skills\computer-use\SKILL.md`, and the adapter entrypoints under `src\adapters\`.
 - For normal Windows automation work, use the MCP tools exposed by this local plugin. Do not import the upstream bundled-client package, do not bootstrap the official OpenAI compatibility client, and do not route through repository wrapper scripts.
+- Using this plugin does not mean you are limited to this plugin's tools. Use other host tools when they are faster or more reliable for non-UI work, such as shell search to locate an executable path, file APIs to verify files, or logs/tests to diagnose installation state. Use Computer Use for Windows UI automation, screenshots, activation, and input.
 - This project intentionally keeps the upstream capability names where they fit, but the local contract shape is the source of truth:
   - `list_apps` returns `{ apps }`, not a bare array.
-  - `get_window_state` returns `window`, optional `screenshot`, optional structured `text`, and `capture`.
+  - `launch_app` returns a structured launch report on success, including observation hints when a target window is seen; failures return explicit `code`, `details`, and guidance.
+  - `get_window_state` returns `window`, optional `screenshot`, optional structured `text`, `capture`, and trace artifact paths when tracing is enabled.
   - `scroll` uses `scroll_x` / `scroll_y`, not camelCase scroll deltas.
   - Accessibility output is a structured `AccessibilityNode` tree under `text`, not a preformatted tree string.
 - If you are validating this repo itself, prefer the local plugin layout, MCP schemas, TypeScript contracts, and tests over older upstream-client assumptions.
@@ -63,7 +65,7 @@ IMPORTANT: do not control Windows apps through unrelated mechanisms before attem
 - If Computer Use reports that the turn ended, that the user stopped Computer Use, or that it is unavailable for the current turn, stop the task and report that Computer Use was stopped or became unavailable. Do not fall back to foreground keyboard/mouse automation such as PowerShell `SendKeys`.
 - If the same lightweight call times out again, do not keep issuing app input. Start a fresh thread or restart the plugin runtime, then retry `list_apps` once. If it still times out or reports helper communication failure, stop and report that the local Windows Computer Use runtime may have crashed.
 - If an RPC error includes an `approvalRequest`, preserve and surface that request. Do not hide approval context behind a generic failure.
-- If the intended app is present but has no suitable open window, call `launch_app` with the app id returned by `list_apps`, then poll `list_apps` until that app exposes a targetable window. If the intended app is not yet discoverable, call `launch_app` with an explicit `.exe` path or executable identifier, then poll `list_apps` or `list_windows` for the new targetable window. Do not open or navigate the Windows Start menu/Search UI to launch apps. Do not continue while a launcher, splash screen, modal, or permission prompt is blocking the app's workspace.
+- If the intended app is present but has no suitable open window, call `launch_app` with the app id returned by `list_apps`, then poll `list_apps` until that app exposes a targetable window. If the intended app is not yet discoverable, use host file/search tools to find and verify the real executable path before calling `launch_app` with an explicit `.exe` path or executable identifier, then poll `list_apps` or `list_windows` for the new targetable window. Do not guess common install paths without checking them. Do not open or navigate the Windows Start menu/Search UI to launch apps. Do not continue while a launcher, splash screen, modal, or permission prompt is blocking the app's workspace.
 - If `launch_app` returns `tray_restore_required`, switch to the `windows.shell.taskbar` app target and restore the existing session by capturing and clicking the taskbar or hidden-tray icon yourself.
 
 ## Runtime Behavior
@@ -160,17 +162,20 @@ GOOD: for canvas/hotkey apps, focus the work surface, clear modal state, then ba
 - Use `list_windows` only when the task is explicitly about currently open windows or when you already know the target app is running and need a fresh flat window list.
 - Occluded windows can be snapshotted without activation. Minimized windows may be listed, but Windows.Graphics.Capture does not capture them reliably while minimized. Input methods activate and restore their target automatically. If a passive snapshot fails after starting from a minimized window, call `activate_window`, refresh the object with `get_window({ id, app })`, and retry once.
 - If the intended app is present but has no suitable open window, call `launch_app({ app: targetApp.id })`, then poll `list_apps` until the app exposes a targetable window. If the app is not yet in `list_apps`, launch it with an explicit `.exe` path or executable identifier, then poll `list_apps` or `list_windows` for the resulting targetable window. If the window never appears, report the exact launch or polling failure. Do not open or navigate the Windows Start menu/Search UI to launch apps, and do not use PowerShell or `Start-Process` as the normal app launch path.
+- Read `launch_app`'s returned `disposition`, `observedWindows`, `resolvedExecutablePath`, and `followUpActions` before doing extra discovery. If it already observed a matching window, use that returned window; otherwise follow the structured polling hints.
 - For tray-resident apps, use the launch hook as the decision point. When it rejects with `tray_restore_required`, inspect `windows.shell.taskbar` and click the existing app icon there instead of trying to force a duplicate launch.
 - `get_window_state` is an expensive point-in-time snapshot, not a live view. Use it to reason over, then batch related actions without re-snapshotting between every input.
 - After `get_window_state`, use the returned `state.window` for later actions; it is the canonical window object that was actually captured.
 - Treat `state.window.health.hung === true` as a warning that the target app is not responding. Stop app input, refresh or recover the window, and report the not-responding state instead of continuing with coordinates.
 - Treat `state.capture.degradedReasons` as first-class guidance. `uia_timeout` means accessibility text was not obtained at all, `uia_empty` means UIA completed without useful matching text, `uia_truncated` means the returned tree was cut short, and `wgc_failed` means screenshot capture fell back to GDI.
+- If a local native-host smoke or diagnostic says WGC is unavailable in a sandboxed or restricted host session, do not conclude that the machine itself lacks WGC. Rerun the native-host smoke outside the sandbox/elevated host path before treating WGC as unsupported.
 - After a stale handle or lost window binding, recover a current window object with `get_window({ id, app })` using an id and app from an earlier returned `WindowRef`.
 - By default, request both screenshot and text only when both will drive the next decision. For simple visual inspection, screenshot is enough. For element targeting, request text and use `element_index`.
 - Accessibility text is returned as a structured node tree under `text`. Element indexes are stable only for the latest `get_window_state({ include_text: true })` result.
 - When `include_text: true` may return a large tree, pass `max_elements`, `role_filter`, and `name_contains` to narrow the snapshot before inspecting fields. Do not dump the full tree unless it is small or the user explicitly needs it.
-- For Chromium Embedded IM apps such as QQ, WeChat, Enterprise WeChat, Feishu, and Lark, do not call `get_window_state({ include_text: true })`, even with `name_contains`, `role_filter`, or `max_elements`; those filters do not make the UIA traversal safe. Use screenshots plus keyboard/search or confirmed coordinates instead.
-- Screenshot data is returned in `screenshot.data` with `mime: "image/jpeg"` plus dimensions and `source`. Do not write screenshots to disk just to inspect them unless the user asked for saved evidence or trace is enabled for debugging.
+- For Chromium Embedded IM apps such as QQ, WeChat, Enterprise WeChat, Feishu, and Lark, avoid UIA traversal on app content windows. Standard Windows common dialogs owned by those apps, such as file pickers and save dialogs, may expose UIA safely and can be handled with the common-dialog helpers.
+- Screenshot data is returned in `screenshot.data` with `mime: "image/jpeg"` plus dimensions and `source`. `get_window_state` also returns screenshot coordinate metadata; coordinate clicks are window-relative by default, and `click({ coordinateSpace: "screenshot" })` should be used only with the `state.window` returned by that snapshot. Do not write screenshots to disk just to inspect them unless the user asked for saved evidence or trace is enabled for debugging.
+- When trace is enabled, inspect `state.trace.screenshotPath`, `state.trace.rawScreenshotPath`, and `state.trace.responsePath` instead of searching the filesystem for trace artifacts.
 - If `get_window_state` fails, stop app input and report the exact error. Do not continue with stale coordinates or attempt to bypass.
 - For IM apps such as QQ, WeChat, and Feishu, prefer a keyboard recovery path before visual coordinate clicks: focus the window, press `Ctrl+F` or the app's search shortcut, verify the search UI changed with a screenshot, type the contact name, and press `Return` only when the UI shows the intended result. Use coordinate clicks only after confirming the target from the latest screenshot and returned window rect.
 - Before sending an IM message, inspect the target contact's recent 1-3 message previews when visible. If a recent preview is substantially similar to the outgoing text, ask the user to confirm that they still want to send the near-duplicate message.
@@ -180,7 +185,8 @@ GOOD: for canvas/hotkey apps, focus the work surface, clear modal state, then ba
 - Call `get_window_state` again only when you need to verify progress, focus may have changed, a modal or launcher may have appeared, the user interrupted, or the prior state is otherwise stale. Choose screenshot, accessibility text, or both based on the next decision.
 - `type_text` sends literal text. Use `press_key` for controls such as `Enter`, `Tab`, arrows, Escape, and keyboard chords instead of embedding control characters in a typed string. If the latest screenshot source is `gdi_fallback`, the target is a secondary-monitor or off-primary Electron/CEF app, or a Chinese Pinyin IME candidate bar is visible, prefer `press_key` with explicit characters and punctuation aliases such as `comma`, `space`, and `exclam`.
 - Prefer X Window System keysym-style names for key input, especially `KP_0` through `KP_9` for apps that distinguish numpad keys from the number row. Common aliases such as `period`, `greater`, `less`, `comma`, `slash`, `question`, `exclam`, `Numpad_0`, `Numpad_Add`, `Numpad_Subtract`, `Numpad_Multiply`, `Numpad_Divide`, `Numpad_Decimal`, and `Numpad_Enter` are also supported. For shifted punctuation shortcuts, include `Shift`, for example `Control_L+Shift_L+period` for Ctrl+Shift+`.` / `>`.
-- Prefer input injection over element index targeting. Coordinate `click`, `scroll`, and `drag` use window-relative pixels for the window captured by `get_window_state`. `(0, 0)` is the top-left of the window. If you do use an accessibility index, the property is `element_index`, not `element`.
+- Prefer input injection over element index targeting. Coordinate `click`, `scroll`, and `drag` use window-relative pixels for the window captured by `get_window_state`; `(0, 0)` is the top-left of the window. If deriving a point from the latest screenshot, pass the exact `state.window` and set `coordinateSpace: "screenshot"` so visible-region and scaling metadata can be applied. If you do use an accessibility index, the property is `element_index`, not `element`.
+- For standard Windows file/folder/save dialogs, prefer `select_file_in_dialog`, `select_folder_in_dialog`, or `set_save_path_in_dialog` over fragile coordinates. These helpers only complete the local dialog; they do not send, upload, publish, or otherwise complete the destination app's external side effect.
 - `scroll` scrolls with input injection from a specific screenshot coordinate. Use `scroll({ window, x, y, scroll_x: 0, scroll_y: 600 })` to scroll down from `(x, y)`. Negative `scroll_y` scrolls up; negative `scroll_x` scrolls left. Do not pass `element_index` to `scroll`; if a specific pane needs focus, click it first with coordinates, then scroll from inside that pane.
 - Use keyboard navigation when it is faster than hunting UI pixels.
 - In Microsoft Office apps, especially Word, Excel, and PowerPoint, prefer keyboard shortcuts and Alt ribbon key sequences over direct ribbon element indexes. Office ribbon UI Automation can time out or fail while the ribbon refreshes after selection changes. For ribbon fields, rehydrate `targetWindow` if needed, then use the visible Alt path and text entry, such as `Alt`, `h`, `f`, `s`, type the font size, and `Return`.
@@ -314,10 +320,13 @@ interface LocalComputerUseTools {
   list_apps(input?: {}): Promise<ListAppsResult>;
   list_windows(input?: {}): Promise<WindowRef[]>;
   get_window(input: GetWindowInput): Promise<WindowRef>;
-  launch_app(input: LaunchAppInput): Promise<null>;
+  launch_app(input: LaunchAppInput): Promise<LaunchAppResult>;
   get_window_state(input: GetWindowStateInput): Promise<WindowStateResult>;
   click(input: ClickInput): Promise<ClickResult>;
   click_element(input: ClickElementInput): Promise<unknown>;
+  select_file_in_dialog(input: CommonDialogPathInput): Promise<CommonDialogPathResult>;
+  select_folder_in_dialog(input: CommonDialogPathInput): Promise<CommonDialogPathResult>;
+  set_save_path_in_dialog(input: CommonDialogPathInput): Promise<CommonDialogPathResult>;
   press_key(input: PressKeyInput): Promise<unknown>;
   type_text(input: TypeTextInput): Promise<unknown>;
   scroll(input: ScrollInput): Promise<unknown>;
@@ -341,6 +350,7 @@ type WindowRef = {
   id: number;
   app: AppIdentifier;
   title?: string;
+  className?: string;
   rect?: WindowRect;
   visible?: boolean;
   minimized?: boolean;
@@ -349,6 +359,11 @@ type WindowRef = {
   foregroundWindowId?: number;
   rectCoordinateSpace?: "virtual_screen" | "unknown";
   rectOnVirtualScreen?: boolean;
+  visibleClickableRegion?: WindowRect;
+  screenshotCoordinateScale?: { x: number; y: number };
+  ownerWindowId?: number;
+  parentWindowId?: number;
+  modalForWindowId?: number;
   health?: {
     hung: boolean;
     isResponding: boolean;
@@ -383,6 +398,25 @@ type GetWindowInput = {
 type LaunchAppInput = {
   app: AppIdentifier;
   launch_mode?: "reuse_or_launch" | "force_new";
+  observe_timeout_ms?: number;
+};
+
+type LaunchAppResult = {
+  ok: true;
+  app: AppIdentifier;
+  strategy: "app_user_model_id" | "executable_path";
+  launchMode: "reuse_or_launch" | "force_new";
+  disposition: "delegated_launch" | "observed_window";
+  message: string;
+  matchedAppId?: AppIdentifier;
+  resolvedExecutablePath?: string;
+  observedWindows?: WindowRef[];
+  followUpActions?: Array<
+    | { action: "list_windows" }
+    | { action: "pollListWindows"; timeoutMs: number; intervalMs: number }
+    | { action: "pollListApps"; timeoutMs: number; intervalMs: number }
+    | { action: "launchByExecutablePath"; executablePath: string }
+  >;
 };
 
 type GetWindowStateInput = {
@@ -413,6 +447,18 @@ type WindowStateResult = {
     height: number;
     byteLength: number;
     source: "wgc" | "gdi_fallback" | "mock";
+    coordinateSpace?: "screenshot";
+    coordinateMapping?: {
+      origin: {
+        windowX: number;
+        windowY: number;
+        screenX: number;
+        screenY: number;
+      };
+      scale: { x: number; y: number };
+      windowRect?: WindowRect;
+      visibleClickableRegion?: WindowRect;
+    };
     degradedReason?: string;
     gdiFallbackAt?: string;
     raw?: {
@@ -436,6 +482,11 @@ type WindowStateResult = {
     screenshotDegradedReason?: string;
     lastReturnedIndex?: number;
   };
+  trace?: {
+    screenshotPath?: string;
+    rawScreenshotPath?: string;
+    responsePath?: string;
+  };
 };
 
 type AccessibilityNode = {
@@ -456,6 +507,7 @@ type ClickInput = {
   window: WindowRef;
   x: number;
   y: number;
+  coordinateSpace?: "window" | "screenshot";
   click_count?: number;
   mouse_button?: MouseButton;
   screenshotId?: string;
@@ -473,6 +525,9 @@ type ActivateWindowResult = {
 type ClickResult = {
   ok: true;
   window: WindowRef;
+  coordinateSpace: "window" | "screenshot";
+  requestedPoint: { x: number; y: number };
+  windowPoint: { x: number; y: number };
   screenPoint: { x: number; y: number };
   clickPlan: {
     moveFlags: number;
@@ -523,6 +578,18 @@ type ClickElementInput = {
   click_count?: number;
   mouse_button?: MouseButton;
   screenshotId?: string;
+};
+
+type CommonDialogPathInput = {
+  window: WindowRef;
+  path: string;
+};
+
+type CommonDialogPathResult = {
+  ok: true;
+  path: string;
+  dialogClosed: boolean | null;
+  helper: "select_file_in_dialog" | "select_folder_in_dialog" | "set_save_path_in_dialog";
 };
 
 type PressKeyInput = {

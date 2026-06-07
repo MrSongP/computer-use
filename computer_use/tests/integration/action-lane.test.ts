@@ -172,7 +172,17 @@ test("action lane exposes discovery and launch capabilities through the same run
       ]
     }
   });
-  assert.deepEqual(launchAppResponse, { id: 8, ok: true, result: null });
+  assert.equal(launchAppResponse.ok, true);
+  const launchResult = launchAppResponse.result as any;
+  assert.equal(launchResult.ok, true);
+  assert.equal(launchResult.app, "demo.exe");
+  assert.equal(launchResult.strategy, "executable_path");
+  assert.equal(launchResult.launchMode, "force_new");
+  assert.equal(launchResult.disposition, "observed_window");
+  assert.deepEqual(launchResult.observedWindows, [
+    { id: 101, app: "demo.exe", title: "Demo Window" }
+  ]);
+  assert.equal(launchResult.followUpActions.some((action: { action: string }) => action.action === "pollListWindows"), true);
 
   const bridge = scaffold.runtime.nativeBridge as MockNativeBridge;
   assert.deepEqual(
@@ -185,7 +195,8 @@ test("action lane exposes discovery and launch capabilities through the same run
       "beginTurn",
       "listApps",
       "beginTurn",
-      "launchApp"
+      "launchApp",
+      "listApps"
     ]
   );
 });
@@ -265,6 +276,7 @@ test("action lane exposes capture and UIA capabilities through the same runtime 
     [
       "beginTurn",
       "getWindowState",
+      "getVirtualScreenMetrics",
       "beginTurn",
       "activateWindow",
       "clickElement",

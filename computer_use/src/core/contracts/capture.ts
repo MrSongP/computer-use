@@ -21,6 +21,21 @@ export interface WindowStateScreenshot {
   height: number;
   byteLength: number;
   source: "wgc" | "gdi_fallback" | "mock";
+  coordinateSpace?: "screenshot";
+  coordinateMapping?: {
+    origin: {
+      windowX: number;
+      windowY: number;
+      screenX: number;
+      screenY: number;
+    };
+    scale: {
+      x: number;
+      y: number;
+    };
+    windowRect?: Rect;
+    visibleClickableRegion?: Rect;
+  };
   degradedReason?: "wgc_failed" | string;
   gdiFallbackAt?: string;
   raw?: {
@@ -53,6 +68,9 @@ export interface WindowStateWindowInfo extends WindowRef {
   foregroundWindowId?: number;
   rectCoordinateSpace?: "virtual_screen" | "unknown";
   rectOnVirtualScreen?: boolean;
+  ownerWindowId?: number;
+  parentWindowId?: number;
+  modalForWindowId?: number;
 }
 
 export interface WindowStateResult {
@@ -72,6 +90,11 @@ export interface WindowStateResult {
     degradedReasons?: readonly string[];
     screenshotDegradedReason?: string;
     lastReturnedIndex?: number;
+  };
+  trace?: {
+    screenshotPath?: string;
+    rawScreenshotPath?: string;
+    responsePath?: string;
   };
 }
 

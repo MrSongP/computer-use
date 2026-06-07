@@ -14,7 +14,7 @@
 - repo-local marketplace：`.agents\plugins\marketplace.json`
 - 推荐安装入口：根目录 `npm run install:codex`、`npm run install:claude`
 
-当前 `launch_app` 的长期语义也要一起记住：默认不是“每次都冷启动”，也不是 runtime 直接帮你恢复各种程序界面；它会在检测到已有实例时通过 hook 拒绝重复启动，并把“去 `windows.shell.taskbar` 截图/点击已有图标恢复”的 guidance 返回给模型。只有显式要求新实例时才应走 `force_new`。
+当前 `launch_app` 的长期语义也要一起记住：默认不是“每次都冷启动”，也不是 runtime 直接帮你恢复各种程序界面；它会在检测到已有实例时通过 hook 拒绝重复启动，并把“去 `windows.shell.taskbar` 截图/点击已有图标恢复”的 guidance 返回给模型。只有显式要求新实例时才应走 `force_new`。成功响应必须是结构化对象，不能退回无信息的 `null`。
 
 `.agents\plugins\marketplace.json` 的 `source.path` 指向 `./computer_use`，也就是本仓库里的真实插件根目录。
 

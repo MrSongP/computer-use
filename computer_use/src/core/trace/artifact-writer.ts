@@ -4,6 +4,7 @@ import path from "node:path";
 export interface TraceArtifactReference {
   kind: string;
   fileName: string;
+  absolutePath: string;
   relativePath: string;
   mimeType: string;
 }
@@ -95,6 +96,7 @@ export class TraceArtifactWriter {
     return {
       kind,
       fileName: normalizedFileName,
+      absolutePath,
       relativePath: path.join(location.relativeActionDir, normalizedFileName),
       mimeType
     };

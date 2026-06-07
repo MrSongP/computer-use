@@ -17,7 +17,27 @@ export type LaunchAppMode = "reuse_or_launch" | "force_new";
 export interface LaunchAppParams {
   app: AppIdentifier;
   launch_mode?: LaunchAppMode;
+  observe_timeout_ms?: number;
 }
+
+export interface LaunchAppResult {
+  ok: true;
+  app: AppIdentifier;
+  strategy: "app_user_model_id" | "executable_path";
+  launchMode: LaunchAppMode;
+  disposition: "delegated_launch" | "observed_window";
+  message: string;
+  matchedAppId?: AppIdentifier;
+  resolvedExecutablePath?: string;
+  observedWindows?: readonly WindowRef[];
+  followUpActions?: readonly LaunchFollowUpAction[];
+}
+
+export type LaunchFollowUpAction =
+  | { action: "list_windows" }
+  | { action: "pollListWindows"; timeoutMs: number; intervalMs: number }
+  | { action: "pollListApps"; timeoutMs: number; intervalMs: number }
+  | { action: "launchByExecutablePath"; executablePath: string };
 
 export interface DiscoveryRequestMap {
   list_windows: ListWindowsParams;
@@ -34,5 +54,5 @@ export type DiscoveryResultMap = {
   list_windows: readonly WindowRef[];
   get_window: WindowRef;
   list_apps: ListAppsResult;
-  launch_app: null;
+  launch_app: LaunchAppResult;
 };

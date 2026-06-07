@@ -44,6 +44,10 @@ const windowRefSchema: ToolInputSchema = {
       type: "string",
       description: "Optional window title from the last discovery or snapshot call."
     },
+    className: {
+      type: "string",
+      description: "Optional Win32 class name from the last discovery or snapshot call."
+    },
     rect: {
       type: "object",
       description: "Optional window bounds carried forward from get_window_state for coordinate actions.",
@@ -86,6 +90,43 @@ const windowRefSchema: ToolInputSchema = {
     rectOnVirtualScreen: {
       type: "boolean",
       description: "Whether rect intersects the current Windows virtual screen."
+    },
+    visibleClickableRegion: {
+      type: "object",
+      description: "Window-relative visible region that maps screenshot coordinates back to clickable coordinates.",
+      properties: {
+        left: { type: "number" },
+        top: { type: "number" },
+        right: { type: "number" },
+        bottom: { type: "number" }
+      },
+      required: ["left", "top", "right", "bottom"],
+      additionalProperties: false
+    },
+    screenshotCoordinateScale: {
+      type: "object",
+      description: "Scale from screenshot pixels to window-relative coordinates.",
+      properties: {
+        x: { type: "number" },
+        y: { type: "number" }
+      },
+      required: ["x", "y"],
+      additionalProperties: false
+    },
+    ownerWindowId: {
+      type: "integer",
+      minimum: 0,
+      description: "Owner window handle when Windows reports one."
+    },
+    parentWindowId: {
+      type: "integer",
+      minimum: 0,
+      description: "Parent window handle when Windows reports one."
+    },
+    modalForWindowId: {
+      type: "integer",
+      minimum: 0,
+      description: "Owning app window handle when this window is a modal child."
     },
     health: {
       type: "object",
@@ -261,6 +302,22 @@ function elementActionSchema(
   };
 }
 
+function commonDialogPathSchema(description: string): ToolInputSchema {
+  return {
+    type: "object",
+    description,
+    properties: {
+      window: windowRefSchema,
+      path: {
+        type: "string",
+        description: "Absolute local filesystem path for the standard dialog."
+      }
+    },
+    required: ["window", "path"],
+    additionalProperties: false
+  };
+}
+
 export function getClaudeToolInputSchema(
   method: CapabilityMethod | "end_turn"
 ): ToolInputSchema {
@@ -404,6 +461,47 @@ export function getClaudeToolOutputSchema(
         additionalProperties: false
       };
 
+    case "launch_app":
+      return {
+        type: "object",
+        description: "Structured launch_app result. Failures return ok:false with code, details, and guidance; successful calls never return null.",
+        properties: {
+          ok: {
+            type: "boolean",
+            description: "True when the launch request was accepted and delegated to Windows."
+          },
+          app: {
+            type: "string",
+            description: "Normalized app id or executable path that was passed to the native bridge."
+          },
+          strategy: {
+            type: "string",
+            enum: ["app_user_model_id", "executable_path"],
+            description: "How the app identifier will be launched."
+          },
+          launchMode: {
+            type: "string",
+            enum: ["reuse_or_launch", "force_new"],
+            description: "Effective launch policy used for this request."
+          },
+          disposition: {
+            type: "string",
+            enum: ["delegated_launch"],
+            description: "The launch request was handed to the native Windows bridge."
+          },
+          message: {
+            type: "string",
+            description: "Human-readable success reason."
+          },
+          matchedAppId: {
+            type: "string",
+            description: "Optional app id matched during reuse_or_launch discovery."
+          }
+        },
+        required: ["ok", "app", "strategy", "launchMode", "disposition", "message"],
+        additionalProperties: false
+      };
+
     default:
       return undefined;
   }
@@ -439,7 +537,7 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
     case "launch_app":
       return {
         type: "object",
-        description: "Launch an installed app id or executable-path identifier, while rejecting duplicate cold-launches with taskbar/tray recovery guidance.",
+        description: "Launch an installed app id or executable-path identifier. If the app is already running or minimized to tray, the hook rejects duplicate cold-launches and returns taskbar/tray recovery guidance. Use other available host tools, such as shell search, when that is faster for finding executable paths or checking installation state.",
         properties: {
           app: {
             type: "string",
@@ -449,6 +547,12 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
             type: "string",
             enum: ["reuse_or_launch", "force_new"],
             description: "Defaults to reuse_or_launch. Use force_new only when the user explicitly asks for a new instance."
+          },
+          observe_timeout_ms: {
+            type: "integer",
+            minimum: 0,
+            maximum: 5000,
+            description: "Short post-launch window observation wait in milliseconds. Defaults to a small value."
           }
         },
         required: ["app"],
@@ -511,6 +615,12 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
             type: "number",
             description: "Window-relative y coordinate."
           },
+          coordinateSpace: {
+            type: "string",
+            enum: ["window", "screenshot"],
+            default: "window",
+            description: "Coordinate space for x/y. Use screenshot only with window metadata returned by get_window_state."
+          },
           click_count: {
             type: "integer",
             minimum: 1,
@@ -525,6 +635,15 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
         required: ["window", "x", "y"],
         additionalProperties: false
       };
+
+    case "select_file_in_dialog":
+      return commonDialogPathSchema("Select an existing local file in a standard Windows file picker. This only completes the local dialog; it does not send, upload, or publish the file.");
+
+    case "select_folder_in_dialog":
+      return commonDialogPathSchema("Select an existing local folder in a standard Windows folder picker. This only completes the local dialog; it does not send, upload, or publish content.");
+
+    case "set_save_path_in_dialog":
+      return commonDialogPathSchema("Set a save path in a standard Windows save dialog. This only completes the local dialog; it does not publish content.");
 
     case "click_element":
       return elementActionSchema(

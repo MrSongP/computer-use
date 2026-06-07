@@ -1,5 +1,11 @@
 import type { AppDescriptor, AppIdentifier } from "../../core/contracts/app.js";
-import type { LaunchAppMode, LaunchAppParams, ListAppsResult } from "../../core/contracts/discovery.js";
+import type { WindowRef } from "../../core/contracts/window.js";
+import type {
+  LaunchAppMode,
+  LaunchAppParams,
+  LaunchAppResult,
+  ListAppsResult
+} from "../../core/contracts/discovery.js";
 import { enforceLaunchAppPolicy } from "../../core/hooks/launch-app/policy-hook.js";
 import type { NativeAppLaunchOptions } from "../bridge/native-bridge.js";
 
@@ -8,11 +14,12 @@ export interface AppLaunchPort {
   launchApp(app: AppIdentifier, options?: NativeAppLaunchOptions): Promise<void>;
 }
 
-export interface AppLaunchPlan {
+export interface AppLaunchPlan extends LaunchAppResult {
   app: AppIdentifier;
   strategy: "app_user_model_id" | "executable_path";
   launchMode: LaunchAppMode;
-  disposition: "delegated_launch";
+  disposition: "delegated_launch" | "observed_window";
+  message: string;
   matchedAppId?: AppIdentifier;
 }
 
@@ -32,14 +39,29 @@ export class AppLaunchService {
     });
 
     const plan: AppLaunchPlan = {
+      ok: true,
       app: normalized,
       strategy: classifyAppLaunchStrategy(normalized),
       launchMode,
       disposition: "delegated_launch",
-      ...(matchedApp ? { matchedAppId: matchedApp.id } : {})
+      message: "launch_app delegated the launch request to the Windows native bridge.",
+      ...(matchedApp ? { matchedAppId: matchedApp.id } : {}),
+      ...(matchedApp?.executablePath ? { resolvedExecutablePath: matchedApp.executablePath } : {})
     };
     await this.port.launchApp(normalized, { launchMode });
-    return plan;
+    const observed = await this.observeWindows(normalized, matchedApp, params.observe_timeout_ms ?? 600);
+    const observedWindows = observed.windows;
+    const resolvedExecutablePath = matchedApp?.executablePath ?? observed.app?.executablePath;
+    return {
+      ...plan,
+      ...(resolvedExecutablePath ? { resolvedExecutablePath } : {}),
+      disposition: observedWindows.length > 0 ? "observed_window" : "delegated_launch",
+      observedWindows,
+      followUpActions: buildLaunchFollowUpActions(matchedApp ?? observed.app),
+      message: observedWindows.length > 0
+        ? "launch_app delegated the launch request and observed at least one matching window."
+        : plan.message
+    };
   }
 
   private async tryFindMatchingApp(app: AppIdentifier): Promise<AppDescriptor | undefined> {
@@ -48,6 +70,33 @@ export class AppLaunchService {
       return findMatchingApp(app, apps);
     } catch {
       return undefined;
+    }
+  }
+
+  private async observeWindows(
+    app: AppIdentifier,
+    matchedApp: AppDescriptor | undefined,
+    timeoutMs: number
+  ): Promise<{ app?: AppDescriptor; windows: readonly WindowRef[] }> {
+    const deadline = Date.now() + timeoutMs;
+    do {
+      const apps = await this.tryListApps();
+      const match = findMatchingApp(app, apps) ?? (matchedApp ? findMatchingApp(matchedApp.id, apps) : undefined);
+      const windows = normalizeObservedWindows(match);
+      if (windows.length > 0 || timeoutMs === 0) {
+        return { app: match, windows };
+      }
+      await sleep(100);
+    } while (Date.now() < deadline);
+
+    return { app: undefined, windows: [] };
+  }
+
+  private async tryListApps(): Promise<readonly AppDescriptor[]> {
+    try {
+      return normalizeAppsPayload(await this.port.listApps());
+    } catch {
+      return [];
     }
   }
 }
@@ -101,4 +150,27 @@ function findMatchingApp(
 
 function normalizeForCompare(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
+}
+
+function normalizeObservedWindows(app: AppDescriptor | undefined): readonly WindowRef[] {
+  return (app?.windows ?? []).map((window) => ({
+    ...window,
+    app: window.app ?? app!.id
+  }));
+}
+
+function buildLaunchFollowUpActions(matchedApp: AppDescriptor | undefined): LaunchAppResult["followUpActions"] {
+  const actions: Array<NonNullable<LaunchAppResult["followUpActions"]>[number]> = [
+    { action: "list_windows" },
+    { action: "pollListWindows", timeoutMs: 1500, intervalMs: 100 },
+    { action: "pollListApps", timeoutMs: 1500, intervalMs: 100 }
+  ];
+  if (matchedApp?.executablePath) {
+    actions.push({ action: "launchByExecutablePath", executablePath: matchedApp.executablePath });
+  }
+  return actions;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -55,6 +55,27 @@ test("toPointerClick converts window-relative coordinates when rect is available
   );
 });
 
+test("toPointerClick converts screenshot coordinates through visible region and scale", () => {
+  assert.deepEqual(
+    toPointerClick({
+      window: {
+        ...windowWithRect,
+        visibleClickableRegion: { left: 25, top: 50, right: 225, bottom: 250 },
+        screenshotCoordinateScale: { x: 2, y: 4 }
+      },
+      coordinateSpace: "screenshot",
+      x: 10,
+      y: 20
+    }),
+    {
+      x: 145,
+      y: 330,
+      button: "left",
+      clickCount: 1
+    }
+  );
+});
+
 test("toPointerScroll and toPointerDrag convert window-relative coordinates when rect is available", () => {
   assert.deepEqual(
     toPointerScroll({
@@ -249,7 +270,16 @@ test("PointerInputService rejects negative-screen clicks when virtual metrics do
       x: 175,
       y: 275
     }),
-    CoordinatesOutsideVirtualScreenError
+    (error: unknown) => {
+      assert.equal(error instanceof CoordinatesOutsideVirtualScreenError, true);
+      const details = (error as CoordinatesOutsideVirtualScreenError).details;
+      assert.equal(details.failureClass, "offscreen_window_region");
+      assert.deepEqual(details.targetWindowRect, secondaryMonitorWindow.rect);
+      assert.deepEqual(details.requestedWindowRelativeCoordinate, { x: 175, y: 275 });
+      assert.deepEqual(details.computedScreenCoordinate, { x: -1992, y: 575 });
+      assert.ok(Array.isArray(details.recoveryHints));
+      return true;
+    }
   );
 });
 
