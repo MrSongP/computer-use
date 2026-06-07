@@ -4,6 +4,10 @@ export interface AppDescriptor {
   id: AppIdentifier;
   displayName?: string;
   executablePath?: string;
+  aliases?: readonly AppIdentifier[];
+  processNames?: readonly string[];
+  processIds?: readonly number[];
+  taskbarLabel?: string;
   isRunning?: boolean;
   lastUsedDate?: string;
   useCount?: number;

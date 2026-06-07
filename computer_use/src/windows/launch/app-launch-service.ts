@@ -46,12 +46,12 @@ export class AppLaunchService {
       disposition: "delegated_launch",
       message: "launch_app delegated the launch request to the Windows native bridge.",
       ...(matchedApp ? { matchedAppId: matchedApp.id } : {}),
-      ...(matchedApp?.executablePath ? { resolvedExecutablePath: matchedApp.executablePath } : {})
+      ...(resolveAppExecutablePath(matchedApp) ? { resolvedExecutablePath: resolveAppExecutablePath(matchedApp) } : {})
     };
     await this.port.launchApp(normalized, { launchMode });
     const observed = await this.observeWindows(normalized, matchedApp, params.observe_timeout_ms ?? 600);
     const observedWindows = observed.windows;
-    const resolvedExecutablePath = matchedApp?.executablePath ?? observed.app?.executablePath;
+    const resolvedExecutablePath = resolveAppExecutablePath(matchedApp) ?? resolveAppExecutablePath(observed.app);
     return {
       ...plan,
       ...(resolvedExecutablePath ? { resolvedExecutablePath } : {}),
@@ -140,16 +140,88 @@ function findMatchingApp(
   app: AppIdentifier,
   apps: readonly AppDescriptor[]
 ): AppDescriptor | undefined {
-  const normalizedTarget = normalizeForCompare(app);
-  return apps.find((candidate) => {
-    const id = normalizeForCompare(candidate.id);
-    const executablePath = normalizeForCompare(candidate.executablePath);
-    return id === normalizedTarget || executablePath === normalizedTarget;
-  });
+  const targetKeys = buildIdentifierKeys(app);
+  return apps.find((candidate) => appMatchesAnyKey(candidate, targetKeys));
 }
 
 function normalizeForCompare(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
+}
+
+function appMatchesAnyKey(app: AppDescriptor, targetKeys: ReadonlySet<string>): boolean {
+  for (const key of buildAppIdentityKeys(app)) {
+    if (targetKeys.has(key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildAppIdentityKeys(app: AppDescriptor): ReadonlySet<string> {
+  const keys = new Set<string>();
+  addIdentifierKeys(keys, app.id);
+  addIdentifierKeys(keys, app.displayName);
+  addIdentifierKeys(keys, app.executablePath);
+  for (const alias of app.aliases ?? []) {
+    addIdentifierKeys(keys, alias);
+  }
+  for (const processName of app.processNames ?? []) {
+    addIdentifierKeys(keys, processName);
+  }
+  for (const window of app.windows) {
+    addIdentifierKeys(keys, window.app);
+  }
+  return keys;
+}
+
+function buildIdentifierKeys(value: string): ReadonlySet<string> {
+  const keys = new Set<string>();
+  addIdentifierKeys(keys, value);
+  return keys;
+}
+
+function addIdentifierKeys(keys: Set<string>, value: string | undefined): void {
+  const normalized = normalizeForCompare(value);
+  if (!normalized) {
+    return;
+  }
+
+  keys.add(normalized);
+  const fileName = normalized.split(/[\\/]/).pop() ?? normalized;
+  if (fileName && fileName !== normalized) {
+    keys.add(fileName);
+  }
+  if (/\.exe$/i.test(fileName)) {
+    keys.add(fileName.slice(0, -4));
+  }
+}
+
+function resolveAppExecutablePath(app: AppDescriptor | undefined): string | undefined {
+  if (!app) {
+    return undefined;
+  }
+
+  if (looksLikeExecutablePath(app.executablePath)) {
+    return app.executablePath;
+  }
+
+  for (const alias of app.aliases ?? []) {
+    if (looksLikeExecutablePath(alias)) {
+      return alias;
+    }
+  }
+
+  for (const window of app.windows) {
+    if (looksLikeExecutablePath(window.app)) {
+      return window.app;
+    }
+  }
+
+  return looksLikeExecutablePath(app.id) ? app.id : undefined;
+}
+
+function looksLikeExecutablePath(value: string | undefined): value is string {
+  return typeof value === "string" && (/\.exe$/i.test(value) || /^[a-z]:\\/i.test(value) || /^\\\\/i.test(value));
 }
 
 function normalizeObservedWindows(app: AppDescriptor | undefined): readonly WindowRef[] {
@@ -165,8 +237,9 @@ function buildLaunchFollowUpActions(matchedApp: AppDescriptor | undefined): Laun
     { action: "pollListWindows", timeoutMs: 1500, intervalMs: 100 },
     { action: "pollListApps", timeoutMs: 1500, intervalMs: 100 }
   ];
-  if (matchedApp?.executablePath) {
-    actions.push({ action: "launchByExecutablePath", executablePath: matchedApp.executablePath });
+  const executablePath = resolveAppExecutablePath(matchedApp);
+  if (executablePath) {
+    actions.push({ action: "launchByExecutablePath", executablePath });
   }
   return actions;
 }

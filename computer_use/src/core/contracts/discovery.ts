@@ -37,6 +37,13 @@ export type LaunchFollowUpAction =
   | { action: "list_windows" }
   | { action: "pollListWindows"; timeoutMs: number; intervalMs: number }
   | { action: "pollListApps"; timeoutMs: number; intervalMs: number }
+  | {
+      action: "restoreFromTaskbar";
+      taskbarAppId: string;
+      taskbarLabel?: string;
+      app?: AppIdentifier;
+      executablePath?: string;
+    }
   | { action: "launchByExecutablePath"; executablePath: string };
 
 export interface DiscoveryRequestMap {
@@ -48,6 +55,11 @@ export interface DiscoveryRequestMap {
 
 export interface ListAppsResult {
   apps: readonly AppDescriptor[];
+  runtime?: {
+    schemaVersion: "computer-use/list-apps/v1";
+    driverName?: string;
+    capabilities?: Record<string, unknown>;
+  };
 }
 
 export type DiscoveryResultMap = {
