@@ -9,6 +9,8 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 const pluginRoot = path.join(repoRoot, "computer_use");
 const pluginSelector = "computer-use@computer-use-local";
+const codexMarketplaceName = "computer-use-local";
+const codexSkillConfigName = "computer-use:computer-use";
 const claudePermissionRule = "mcp__plugin_computer-use_computer-use";
 const npmCommand = "npm";
 
@@ -70,7 +72,14 @@ async function installCodex() {
   step("Registering Codex marketplace");
   await run("codex", ["plugin", "marketplace", "add", repoRoot]);
 
-  if (await isCodexPluginInstalled()) {
+  if (!(await hasCodexPluginInstallCommands())) {
+    step("Enabling Codex plugin in config");
+    await enableCodexPluginInConfig();
+    process.stdout.write("\nCodex install finished. Start a new Codex thread/session if the plugin was not already loaded.\n");
+    return;
+  }
+
+  if (await isCodexPluginInstalledLegacy()) {
     step("Refreshing existing Codex plugin install");
     await run("codex", ["plugin", "remove", pluginSelector]);
   }
@@ -173,8 +182,12 @@ async function doctor(targetName) {
     }
   } else {
     step("Checking Codex marketplace registration");
-    const marketplaces = await runCapture("codex", ["plugin", "marketplace", "list"]);
-    assertMatch(marketplaces, /computer-use-local/, "Codex marketplace computer-use-local is not registered.");
+    if (await hasCodexMarketplaceListCommand()) {
+      const marketplaces = await runCapture("codex", ["plugin", "marketplace", "list"]);
+      assertMatch(marketplaces, /computer-use-local/, "Codex marketplace computer-use-local is not registered.");
+    } else {
+      await assertCodexMarketplaceConfig();
+    }
 
     step("Checking Codex plugin install state");
     if (!(await isCodexPluginInstalled())) {
@@ -215,12 +228,173 @@ async function commandExists(name) {
 }
 
 async function isCodexPluginInstalled() {
+  if (await hasCodexPluginInstallCommands()) {
+    return await isCodexPluginInstalledLegacy();
+  }
+
+  return await isCodexPluginEnabledInConfig();
+}
+
+async function isCodexPluginInstalledLegacy() {
   try {
     const output = await runCapture("codex", ["plugin", "list", "--marketplace", "computer-use-local"]);
     return /computer-use@computer-use-local\s+installed/.test(output);
   } catch {
     return false;
   }
+}
+
+async function hasCodexPluginInstallCommands() {
+  const help = await runCapture("codex", ["plugin", "--help"]);
+  return /^\s+(add|install)\s/m.test(help) && /^\s+list\s/m.test(help);
+}
+
+async function hasCodexMarketplaceListCommand() {
+  const help = await runCapture("codex", ["plugin", "marketplace", "--help"]);
+  return /^\s+list\s/m.test(help);
+}
+
+function getCodexConfigPath() {
+  return path.join(process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"), "config.toml");
+}
+
+async function readCodexConfigText() {
+  const configPath = getCodexConfigPath();
+  if (!(await pathExists(configPath))) {
+    return "";
+  }
+
+  return await readFile(configPath, "utf8");
+}
+
+async function writeCodexConfigText(value) {
+  const configPath = getCodexConfigPath();
+  await mkdir(path.dirname(configPath), { recursive: true });
+  await writeFile(configPath, value, "utf8");
+}
+
+async function enableCodexPluginInConfig() {
+  let config = await readCodexConfigText();
+  config = upsertTomlValue(config, `plugins."${pluginSelector}"`, "enabled", "true");
+  config = upsertCodexSkillConfig(config, codexSkillConfigName, true);
+  await writeCodexConfigText(config);
+}
+
+async function isCodexPluginEnabledInConfig() {
+  const config = await readCodexConfigText();
+  const pluginSection = getTomlSection(config, `plugins."${pluginSelector}"`);
+  if (!/^\s*enabled\s*=\s*true\s*$/m.test(pluginSection)) {
+    return false;
+  }
+
+  return hasCodexSkillConfig(config, codexSkillConfigName, true);
+}
+
+async function assertCodexMarketplaceConfig() {
+  const config = await readCodexConfigText();
+  const marketplaceSection = getTomlSection(config, `marketplaces.${codexMarketplaceName}`);
+  if (!marketplaceSection) {
+    throw new Error(`Codex marketplace ${codexMarketplaceName} is not registered in ${getCodexConfigPath()}.`);
+  }
+}
+
+function upsertTomlValue(config, tableName, key, value) {
+  const normalized = normalizeTomlText(config);
+  const header = `[${tableName}]`;
+  const section = findTomlSection(normalized, tableName);
+
+  if (!section) {
+    return `${trimTrailingNewlines(normalized)}\n\n${header}\n${key} = ${value}\n`;
+  }
+
+  const before = normalized.slice(0, section.start);
+  const body = normalized.slice(section.start, section.end);
+  const after = normalized.slice(section.end);
+  const keyPattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=.*$`, "m");
+  const updatedBody = keyPattern.test(body)
+    ? body.replace(keyPattern, `${key} = ${value}`)
+    : body.replace(/\n/, `\n${key} = ${value}\n`);
+  return before + updatedBody + after;
+}
+
+function upsertCodexSkillConfig(config, name, enabled) {
+  const normalized = normalizeTomlText(config);
+  const sections = findTomlArraySections(normalized, "skills.config");
+  const desiredEnabled = String(enabled);
+
+  for (const section of sections) {
+    const body = normalized.slice(section.start, section.end);
+    if (!new RegExp(`^\\s*name\\s*=\\s*${escapeRegExp(JSON.stringify(name))}\\s*$`, "m").test(body)) {
+      continue;
+    }
+
+    const keyPattern = /^\s*enabled\s*=.*$/m;
+    const updatedBody = keyPattern.test(body)
+      ? body.replace(keyPattern, `enabled = ${desiredEnabled}`)
+      : body.replace(/\n/, `\nenabled = ${desiredEnabled}\n`);
+    return normalized.slice(0, section.start) + updatedBody + normalized.slice(section.end);
+  }
+
+  return `${trimTrailingNewlines(normalized)}\n\n[[skills.config]]\nname = ${JSON.stringify(name)}\nenabled = ${desiredEnabled}\n`;
+}
+
+function hasCodexSkillConfig(config, name, enabled) {
+  const expectedEnabled = String(enabled);
+  return findTomlArraySections(config, "skills.config").some((section) => {
+    const body = config.slice(section.start, section.end);
+    return new RegExp(`^\\s*name\\s*=\\s*${escapeRegExp(JSON.stringify(name))}\\s*$`, "m").test(body)
+      && new RegExp(`^\\s*enabled\\s*=\\s*${expectedEnabled}\\s*$`, "m").test(body);
+  });
+}
+
+function getTomlSection(config, tableName) {
+  const section = findTomlSection(config, tableName);
+  return section ? config.slice(section.start, section.end) : "";
+}
+
+function findTomlSection(config, tableName) {
+  const headerPattern = new RegExp(`^\\s*\\[${escapeRegExp(tableName)}\\]\\s*$`, "m");
+  const match = headerPattern.exec(config);
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    start: match.index,
+    end: findTomlSectionEnd(config, match.index + match[0].length)
+  };
+}
+
+function findTomlArraySections(config, tableName) {
+  const headerPattern = new RegExp(`^\\s*\\[\\[${escapeRegExp(tableName)}\\]\\]\\s*$`, "gm");
+  const sections = [];
+  let match;
+  while ((match = headerPattern.exec(config)) !== null) {
+    sections.push({
+      start: match.index,
+      end: findTomlSectionEnd(config, match.index + match[0].length)
+    });
+  }
+  return sections;
+}
+
+function findTomlSectionEnd(config, fromIndex) {
+  const nextHeaderPattern = /^\s*\[/gm;
+  nextHeaderPattern.lastIndex = fromIndex;
+  const nextHeader = nextHeaderPattern.exec(config);
+  return nextHeader?.index ?? config.length;
+}
+
+function normalizeTomlText(value) {
+  return value.replace(/\r\n/g, "\n");
+}
+
+function trimTrailingNewlines(value) {
+  return value.replace(/\n*$/, "");
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function isClaudePluginInstalled() {
