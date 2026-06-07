@@ -24,7 +24,8 @@ export class WindowDiscoveryService {
   async listApps(): Promise<ListAppsResult> {
     const apps = normalizeAppsPayload(await this.port.listApps());
     return {
-      apps: apps.map(validateAppDescriptor)
+      apps: apps.map(validateAppDescriptor),
+      runtime: buildRuntimeInfo(this.port)
     };
   }
 }
@@ -95,10 +96,62 @@ export function validateAppDescriptor(app: AppDescriptor): AppDescriptor {
     id: app.id,
     ...(app.displayName ? { displayName: app.displayName } : {}),
     ...(app.executablePath ? { executablePath: app.executablePath } : {}),
+    ...preserveStringList("aliases", app.aliases),
+    ...preserveStringList("processNames", app.processNames),
+    ...preserveNumberList("processIds", app.processIds),
+    ...(app.taskbarLabel ? { taskbarLabel: app.taskbarLabel } : {}),
     ...(typeof app.isRunning === "boolean" ? { isRunning: app.isRunning } : {}),
     ...(app.lastUsedDate ? { lastUsedDate: app.lastUsedDate } : {}),
     ...(typeof app.useCount === "number" ? { useCount: app.useCount } : {}),
     ...(app.activationModel ? { activationModel: app.activationModel } : {}),
     windows: app.windows.map(validateWindowRef)
+  };
+}
+
+function preserveStringList(
+  key: "aliases" | "processNames",
+  value: readonly string[] | undefined
+): Pick<AppDescriptor, "aliases" | "processNames"> | {} {
+  if (!Array.isArray(value)) {
+    return {};
+  }
+
+  const normalized = value
+    .map((entry) => typeof entry === "string" ? entry.trim() : "")
+    .filter((entry) => entry.length > 0);
+  if (normalized.length === 0) {
+    return {};
+  }
+
+  return key === "aliases"
+    ? { aliases: normalized }
+    : { processNames: normalized };
+}
+
+function preserveNumberList(
+  key: "processIds",
+  value: readonly number[] | undefined
+): Pick<AppDescriptor, "processIds"> | {} {
+  if (!Array.isArray(value)) {
+    return {};
+  }
+
+  const normalized = value.filter((entry) => Number.isInteger(entry) && entry > 0);
+  return normalized.length > 0 ? { [key]: normalized } : {};
+}
+
+function buildRuntimeInfo(port: WindowDiscoveryPort): NonNullable<ListAppsResult["runtime"]> {
+  const runtime = port as {
+    driverName?: unknown;
+    capabilities?: unknown;
+  };
+  const capabilities = runtime.capabilities && typeof runtime.capabilities === "object" && !Array.isArray(runtime.capabilities)
+    ? runtime.capabilities as Record<string, unknown>
+    : undefined;
+
+  return {
+    schemaVersion: "computer-use/list-apps/v1",
+    ...(typeof runtime.driverName === "string" ? { driverName: runtime.driverName } : {}),
+    ...(capabilities ? { capabilities } : {})
   };
 }
