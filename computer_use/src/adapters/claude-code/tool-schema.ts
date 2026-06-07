@@ -154,6 +154,113 @@ const windowRefSchema: ToolInputSchema = {
   additionalProperties: false
 };
 
+const appDescriptorSchema: ToolInputSchema = {
+  type: "object",
+  description: "Launchable app identity with any currently targetable windows and best-effort identity hints.",
+  properties: {
+    id: {
+      type: "string",
+      description: "Stable launcher id, AppUserModelId, executable path, or shell target id."
+    },
+    displayName: {
+      type: "string",
+      description: "Human-readable app name when available."
+    },
+    executablePath: {
+      type: "string",
+      description: "Resolved or inferred executable path when available."
+    },
+    aliases: {
+      type: "array",
+      items: { type: "string" },
+      description: "Known equivalent identifiers such as launcher ids and executable paths."
+    },
+    processNames: {
+      type: "array",
+      items: { type: "string" },
+      description: "Observed or inferred process executable names."
+    },
+    processIds: {
+      type: "array",
+      items: {
+        type: "integer",
+        minimum: 1
+      },
+      description: "Running process ids observed for this executable in the current user session."
+    },
+    taskbarLabel: {
+      type: "string",
+      description: "Best-effort taskbar label hint for restoring tray or minimized sessions."
+    },
+    isRunning: {
+      type: "boolean",
+      description: "True when a visible window or matching process is detected."
+    },
+    lastUsedDate: {
+      type: "string",
+      description: "Shell last-used timestamp when available."
+    },
+    useCount: {
+      type: "number",
+      description: "Shell use count when available."
+    },
+    activationModel: {
+      type: "string",
+      enum: ["app_user_model_id", "executable_path"],
+      description: "How launch_app should activate this app."
+    },
+    windows: {
+      type: "array",
+      items: windowRefSchema,
+      description: "Currently targetable windows associated with this app."
+    }
+  },
+  required: ["id", "windows"],
+  additionalProperties: false
+};
+
+const runtimeInfoSchema: ToolInputSchema = {
+  type: "object",
+  description: "Runtime/schema metadata for diagnosing plugin and documentation drift.",
+  properties: {
+    schemaVersion: {
+      type: "string",
+      enum: ["computer-use/list-apps/v1"],
+      description: "Schema version for the list_apps result."
+    },
+    driverName: {
+      type: "string",
+      description: "Native bridge driver serving the request."
+    },
+    capabilities: {
+      type: "object",
+      description: "Best-effort native bridge capability map."
+    }
+  },
+  required: ["schemaVersion"],
+  additionalProperties: false
+};
+
+const tracePathsSchema: ToolInputSchema = {
+  type: "object",
+  description: "Absolute local trace artifact paths returned when trace is enabled.",
+  properties: {
+    screenshotPath: {
+      type: "string",
+      description: "Absolute path to the saved JPEG screenshot."
+    },
+    rawScreenshotPath: {
+      type: "string",
+      description: "Absolute path to the saved raw PNG screenshot when available."
+    },
+    responsePath: {
+      type: "string",
+      description: "Absolute path to the redacted window-state JSON artifact."
+    }
+  },
+  additionalProperties: false
+};
+
 const virtualScreenSchema: ToolInputSchema = {
   type: "object",
   properties: {
@@ -329,6 +436,22 @@ export function getClaudeToolOutputSchema(
   method: CapabilityMethod | "end_turn"
 ): ToolInputSchema | undefined {
   switch (method) {
+    case "list_apps":
+      return {
+        type: "object",
+        description: "Structured list_apps result with app identity hints and runtime metadata.",
+        properties: {
+          apps: {
+            type: "array",
+            items: appDescriptorSchema,
+            description: "Launchable apps and attached targetable windows."
+          },
+          runtime: runtimeInfoSchema
+        },
+        required: ["apps"],
+        additionalProperties: false
+      };
+
     case "list_windows":
       return {
         type: "object",
@@ -486,8 +609,8 @@ export function getClaudeToolOutputSchema(
           },
           disposition: {
             type: "string",
-            enum: ["delegated_launch"],
-            description: "The launch request was handed to the native Windows bridge."
+            enum: ["delegated_launch", "observed_window"],
+            description: "Whether the launch was only delegated or at least one matching window was observed."
           },
           message: {
             type: "string",
@@ -496,9 +619,102 @@ export function getClaudeToolOutputSchema(
           matchedAppId: {
             type: "string",
             description: "Optional app id matched during reuse_or_launch discovery."
+          },
+          resolvedExecutablePath: {
+            type: "string",
+            description: "Executable path resolved from discovery or observed window identity."
+          },
+          observedWindows: {
+            type: "array",
+            items: windowRefSchema,
+            description: "Matching windows observed during the short post-launch wait."
+          },
+          followUpActions: {
+            type: "array",
+            items: {
+              type: "object",
+              description: "Agent-oriented next action hint such as polling windows/apps, restoring from taskbar, or launching by executable path."
+            },
+            description: "Structured recovery or verification hints for the next tool call."
           }
         },
         required: ["ok", "app", "strategy", "launchMode", "disposition", "message"],
+        additionalProperties: false
+      };
+
+    case "get_window_state":
+      return {
+        type: "object",
+        description: "Structured window snapshot with screenshot, accessibility, capture diagnostics, and trace artifact paths.",
+        properties: {
+          window: windowRefSchema,
+          screenshot: {
+            type: "object",
+            description: "JPEG screenshot payload plus coordinate mapping metadata.",
+            properties: {
+              data: {
+                type: "string",
+                description: "Base64 JPEG screenshot data; MCP text content may redact this while image content carries the bytes."
+              },
+              mime: {
+                type: "string",
+                enum: ["image/jpeg"]
+              },
+              width: { type: "integer" },
+              height: { type: "integer" },
+              byteLength: { type: "integer" },
+              source: {
+                type: "string",
+                enum: ["wgc", "gdi_fallback", "mock"]
+              },
+              coordinateSpace: {
+                type: "string",
+                enum: ["screenshot"]
+              },
+              coordinateMapping: {
+                type: "object",
+                description: "Mapping from screenshot pixels back to window-relative and screen coordinates."
+              },
+              degradedReason: { type: "string" },
+              gdiFallbackAt: { type: "string" },
+              raw: {
+                type: "object",
+                description: "Raw PNG screenshot payload when available."
+              }
+            },
+            required: ["data", "mime", "width", "height", "byteLength", "source"],
+            additionalProperties: false
+          },
+          text: {
+            type: "object",
+            description: "Structured AccessibilityNode tree when accessibility capture is requested and available."
+          },
+          capture: {
+            type: "object",
+            description: "Capture request and degradation diagnostics.",
+            properties: {
+              screenshotRequested: { type: "boolean" },
+              textRequested: { type: "boolean" },
+              screenshotSource: { type: "string" },
+              textSource: { type: "string" },
+              elementsReturned: { type: "integer" },
+              elementsTotal: { type: "integer" },
+              elementsMatched: { type: "integer" },
+              truncated: { type: "boolean" },
+              partial: { type: "boolean" },
+              degradedReasons: {
+                type: "array",
+                items: { type: "string" }
+              },
+              screenshotDegradedReason: { type: "string" },
+              lastReturnedIndex: { type: "integer" }
+            },
+            required: ["screenshotRequested", "textRequested"],
+            additionalProperties: false
+          },
+          trace: tracePathsSchema
+        },
+        required: ["window", "capture"],
         additionalProperties: false
       };
 
