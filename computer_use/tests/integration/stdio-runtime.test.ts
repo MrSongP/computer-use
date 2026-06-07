@@ -60,29 +60,28 @@ test("stdio runtime handles discovery requests over line-delimited JSON-RPC", as
     ok: true,
     result: [{ id: 101, app: "demo.exe", title: "Demo Window" }]
   });
-  assert.deepEqual(JSON.parse(listAppsLine!), {
-    id: 10,
-    ok: true,
-    result: {
-      apps: [
-        {
-          id: "demo.exe",
-          displayName: "Demo App",
-          executablePath: "C:\\Demo\\demo.exe",
-          isRunning: true,
-          activationModel: "executable_path",
-          windows: [{ id: 101, app: "demo.exe", title: "Demo Window" }]
-        },
-        {
-          id: "windows.shell.taskbar",
-          displayName: "Windows Taskbar",
-          isRunning: true,
-          activationModel: "executable_path",
-          windows: [{ id: 501, app: "windows.shell.taskbar", title: "Windows Taskbar" }]
-        }
-      ]
+  const listApps = JSON.parse(listAppsLine!);
+  assert.equal(listApps.id, 10);
+  assert.equal(listApps.ok, true);
+  assert.deepEqual(listApps.result.apps, [
+    {
+      id: "demo.exe",
+      displayName: "Demo App",
+      executablePath: "C:\\Demo\\demo.exe",
+      isRunning: true,
+      activationModel: "executable_path",
+      windows: [{ id: 101, app: "demo.exe", title: "Demo Window" }]
+    },
+    {
+      id: "windows.shell.taskbar",
+      displayName: "Windows Taskbar",
+      isRunning: true,
+      activationModel: "executable_path",
+      windows: [{ id: 501, app: "windows.shell.taskbar", title: "Windows Taskbar" }]
     }
-  });
+  ]);
+  assert.equal(listApps.result.runtime.schemaVersion, "computer-use/list-apps/v1");
+  assert.equal(listApps.result.runtime.driverName, "mock");
 });
 
 test("stdio runtime closes the transport and exit path on close", async () => {

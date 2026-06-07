@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -66,9 +66,16 @@ test("codex adapter drives the helper end-to-end and writes trace artifacts by s
     ) as {
       window: { id: number; app: string; title?: string };
       capture: { screenshotRequested: boolean; textRequested: boolean };
+      trace: { screenshotPath: string; rawScreenshotPath: string; responsePath: string };
     };
     assert.equal(windowState.window.id, 101);
     assert.equal(windowState.capture.screenshotRequested, true);
+    assert.equal(typeof windowState.trace.screenshotPath, "string");
+    assert.equal(typeof windowState.trace.rawScreenshotPath, "string");
+    assert.equal(typeof windowState.trace.responsePath, "string");
+    await access(windowState.trace.screenshotPath);
+    await access(windowState.trace.rawScreenshotPath);
+    await access(windowState.trace.responsePath);
 
     const clickResult = await adapter.invoke("click", { window, x: 80, y: 140 }, { meta: turnOneMeta }) as {
       ok: boolean;
@@ -88,8 +95,11 @@ test("codex adapter drives the helper end-to-end and writes trace artifacts by s
 
     const apps = await adapter.invoke("list_apps", {}, { meta: turnTwoMeta }) as {
       apps: Array<{ id: string; displayName?: string }>;
+      runtime: { schemaVersion: string; driverName?: string };
     };
     assert.equal(apps.apps[0]?.id, "demo.exe");
+    assert.equal(apps.runtime.schemaVersion, "computer-use/list-apps/v1");
+    assert.equal(apps.runtime.driverName, "mock");
 
     const launchResult = await adapter.invoke("launch_app", { app: "demo.exe", launch_mode: "force_new" }, { meta: turnTwoMeta }) as any;
     assert.equal(launchResult.ok, true);

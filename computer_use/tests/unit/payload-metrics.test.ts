@@ -61,6 +61,10 @@ function createEvidence(
     turnId: "turn",
     hostSource: "codex",
     driverName: "mock",
+    runtime: {
+      driverName: "mock",
+      listAppsSchemaVersion: "computer-use/list-apps/v1"
+    },
     startedAt: "2026-06-04T00:00:00.000Z",
     endedAt: "2026-06-04T00:00:00.100Z",
     durationMs,

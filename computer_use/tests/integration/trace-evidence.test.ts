@@ -79,6 +79,9 @@ test("request-level trace meta writes success evidence under session and turn fo
     assert.equal(evidence.trace.enabledSource, "request_meta");
     assert.equal(evidence.trace.outputDirSource, "request_meta");
     assert.equal(evidence.hostSource, "codex");
+    assert.equal(evidence.runtime.driverName, "mock");
+    assert.equal(evidence.runtime.listAppsSchemaVersion, "computer-use/list-apps/v1");
+    assert.equal(evidence.runtime.capabilities.lifecycleModel.transport, "embedded");
     assert.deepEqual(evidence.targetWindow, { id: 101, app: "demo.exe", title: "Demo" });
     assert.deepEqual(evidence.clickCoordinates, {
       x: 144,

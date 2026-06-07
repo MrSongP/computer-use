@@ -38,11 +38,85 @@ test("AppLaunchService rejects duplicate cold-launches and returns taskbar guida
       const rejection = error as HookRejectionError;
       assert.equal(rejection.code, "tray_restore_required");
       assert.equal(rejection.details?.taskbarAppId, TASKBAR_APP_ID);
+      assert.equal(rejection.details?.matchedExecutablePath, "C:\\Windows\\notepad.exe");
       assert.equal(typeof rejection.guidance?.model_action, "string");
       return true;
     }
   );
   assert.deepEqual(launched, []);
+});
+
+test("AppLaunchService matches launcher identity to an existing executable session", async () => {
+  const launched: Array<{ app: string; launchMode?: string }> = [];
+  const service = new AppLaunchService({
+    async listApps() {
+      return {
+        apps: [
+          {
+            id: "QQ",
+            displayName: "QQ",
+            executablePath: "D:\\Program Files (x86)\\QQ\\QQ.exe",
+            aliases: ["D:\\Program Files (x86)\\QQ\\QQ.exe"],
+            processNames: ["QQ.exe"],
+            processIds: [4567],
+            taskbarLabel: "QQ",
+            isRunning: true,
+            activationModel: "app_user_model_id",
+            windows: []
+          }
+        ]
+      };
+    },
+    async launchApp(app, options) {
+      launched.push({ app, launchMode: options?.launchMode });
+    }
+  });
+
+  await assert.rejects(
+    service.launch({ app: "QQ" }),
+    (error: unknown) => {
+      assert.equal(error instanceof HookRejectionError, true);
+      const rejection = error as HookRejectionError;
+      assert.equal(rejection.code, "tray_restore_required");
+      assert.equal(rejection.details?.matchedAppId, "QQ");
+      assert.equal(rejection.details?.matchedExecutablePath, "D:\\Program Files (x86)\\QQ\\QQ.exe");
+      assert.deepEqual(rejection.details?.matchedProcessNames, ["QQ.exe"]);
+      assert.deepEqual(rejection.details?.matchedProcessIds, [4567]);
+      assert.equal(rejection.details?.taskbarLabelHint, "QQ");
+      return true;
+    }
+  );
+  assert.deepEqual(launched, []);
+});
+
+test("AppLaunchService matches executable requests back to launcher apps", async () => {
+  const service = new AppLaunchService({
+    async listApps() {
+      return {
+        apps: [
+          {
+            id: "QQ",
+            displayName: "QQ",
+            executablePath: "D:\\Program Files (x86)\\QQ\\QQ.exe",
+            aliases: ["QQ"],
+            processNames: ["QQ.exe"],
+            isRunning: false,
+            activationModel: "app_user_model_id",
+            windows: []
+          }
+        ]
+      };
+    },
+    async launchApp() {}
+  });
+
+  const result = await service.launch({
+    app: "D:\\Program Files (x86)\\QQ\\QQ.exe",
+    observe_timeout_ms: 0
+  });
+
+  assert.equal(result.matchedAppId, "QQ");
+  assert.equal(result.resolvedExecutablePath, "D:\\Program Files (x86)\\QQ\\QQ.exe");
 });
 
 test("AppLaunchService rejects launch_app on the taskbar shell target", async () => {

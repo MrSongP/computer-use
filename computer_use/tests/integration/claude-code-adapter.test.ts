@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -45,9 +45,16 @@ test("claude code adapter drives shared capabilities and writes host-scoped trac
     ) as {
       window: { id: number; app: string; title?: string };
       capture: { screenshotRequested: boolean; textRequested: boolean };
+      trace: { screenshotPath: string; rawScreenshotPath: string; responsePath: string };
     };
     assert.equal(windowState.window.id, 101);
     assert.equal(windowState.capture.screenshotRequested, true);
+    assert.equal(typeof windowState.trace.screenshotPath, "string");
+    assert.equal(typeof windowState.trace.rawScreenshotPath, "string");
+    assert.equal(typeof windowState.trace.responsePath, "string");
+    await access(windowState.trace.screenshotPath);
+    await access(windowState.trace.rawScreenshotPath);
+    await access(windowState.trace.responsePath);
 
     const clickResult = await adapter.invoke("click", { window, x: 80, y: 140 }, { meta: turnMeta }) as {
       ok: boolean;
@@ -167,6 +174,17 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     const listWindowsTool = tools.result.tools.find((tool: { name: string }) => tool.name === "list_windows");
     assert.equal(listWindowsTool.outputSchema.type, "object");
     assert.deepEqual(listWindowsTool.outputSchema.required, ["windows"]);
+    const listAppsTool = tools.result.tools.find((tool: { name: string }) => tool.name === "list_apps");
+    assert.equal(listAppsTool.outputSchema.properties.runtime.properties.schemaVersion.enum[0], "computer-use/list-apps/v1");
+    assert.equal(listAppsTool.outputSchema.properties.apps.items.properties.aliases.items.type, "string");
+    assert.equal(listAppsTool.outputSchema.properties.apps.items.properties.processIds.items.type, "integer");
+    const windowStateTool = tools.result.tools.find((tool: { name: string }) => tool.name === "get_window_state");
+    assert.equal(windowStateTool.outputSchema.properties.trace.properties.screenshotPath.type, "string");
+    assert.equal(windowStateTool.outputSchema.properties.trace.properties.rawScreenshotPath.type, "string");
+    assert.equal(windowStateTool.outputSchema.properties.trace.properties.responsePath.type, "string");
+    const launchAppTool = tools.result.tools.find((tool: { name: string }) => tool.name === "launch_app");
+    assert.deepEqual(launchAppTool.outputSchema.properties.disposition.enum, ["delegated_launch", "observed_window"]);
+    assert.equal(launchAppTool.outputSchema.properties.observedWindows.items.required.includes("app"), true);
     const clickTool = tools.result.tools.find((tool: { name: string }) => tool.name === "click");
     assert.equal(clickTool.inputSchema.required.includes("window"), true);
     assert.equal(clickTool.inputSchema.properties.window.required.includes("id"), true);

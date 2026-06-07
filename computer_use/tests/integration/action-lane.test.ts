@@ -149,29 +149,28 @@ test("action lane exposes discovery and launch capabilities through the same run
     ok: true,
     result: { id: 101, app: "demo.exe", title: "Demo Window" }
   });
-  assert.deepEqual(listAppsResponse, {
-    id: 7,
-    ok: true,
-    result: {
-      apps: [
-        {
-          id: "demo.exe",
-          displayName: "Demo App",
-          executablePath: "C:\\Demo\\demo.exe",
-          isRunning: true,
-          activationModel: "executable_path",
-          windows: [{ id: 101, app: "demo.exe", title: "Demo Window" }]
-        },
-        {
-          id: "windows.shell.taskbar",
-          displayName: "Windows Taskbar",
-          isRunning: true,
-          activationModel: "executable_path",
-          windows: [{ id: 501, app: "windows.shell.taskbar", title: "Windows Taskbar" }]
-        }
-      ]
+  assert.equal(listAppsResponse.id, 7);
+  assert.equal(listAppsResponse.ok, true);
+  const listAppsResult = listAppsResponse.result as any;
+  assert.deepEqual(listAppsResult.apps, [
+    {
+      id: "demo.exe",
+      displayName: "Demo App",
+      executablePath: "C:\\Demo\\demo.exe",
+      isRunning: true,
+      activationModel: "executable_path",
+      windows: [{ id: 101, app: "demo.exe", title: "Demo Window" }]
+    },
+    {
+      id: "windows.shell.taskbar",
+      displayName: "Windows Taskbar",
+      isRunning: true,
+      activationModel: "executable_path",
+      windows: [{ id: 501, app: "windows.shell.taskbar", title: "Windows Taskbar" }]
     }
-  });
+  ]);
+  assert.equal(listAppsResult.runtime.schemaVersion, "computer-use/list-apps/v1");
+  assert.equal(listAppsResult.runtime.driverName, "mock");
   assert.equal(launchAppResponse.ok, true);
   const launchResult = launchAppResponse.result as any;
   assert.equal(launchResult.ok, true);
