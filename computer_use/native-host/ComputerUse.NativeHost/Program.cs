@@ -1056,7 +1056,7 @@ namespace ComputerUse.NativeHost
             ThrowIfInterrupted();
 
             var windows = EnumerateWindows();
-            var runningExecutablePaths = EnumerateRunningExecutablePaths();
+            var runningProcesses = EnumerateRunningProcesses();
             var windowsByApp = new Dictionary<string, List<Dictionary<string, object>>>(StringComparer.OrdinalIgnoreCase);
             foreach (Dictionary<string, object> window in windows)
             {
@@ -1073,15 +1073,27 @@ namespace ComputerUse.NativeHost
             }
 
             var merged = new Dictionary<string, Dictionary<string, object>>(StringComparer.OrdinalIgnoreCase);
+            var claimedWindowAppIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var claimedExecutablePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var app in EnumerateShellApps())
             {
                 ThrowIfInterrupted();
-                merged[app.Id] = BuildAppPayload(app, windowsByApp, runningExecutablePaths);
+                EnrichAppIdentity(app, windowsByApp, runningProcesses);
+                merged[app.Id] = BuildAppPayload(app, windowsByApp, runningProcesses);
+                ClaimExecutablePaths(claimedExecutablePaths, app);
+                foreach (var claimedWindowAppId in ResolveAppWindowAppIds(app, windowsByApp))
+                {
+                    claimedWindowAppIds.Add(claimedWindowAppId);
+                    if (LooksLikeExecutablePath(claimedWindowAppId))
+                    {
+                        claimedExecutablePaths.Add(claimedWindowAppId);
+                    }
+                }
             }
 
             foreach (var entry in windowsByApp)
             {
-                if (merged.ContainsKey(entry.Key))
+                if (merged.ContainsKey(entry.Key) || claimedWindowAppIds.Contains(entry.Key))
                 {
                     continue;
                 }
@@ -1093,7 +1105,31 @@ namespace ComputerUse.NativeHost
                     ExecutablePath = entry.Key,
                     ActivationModel = "executable_path"
                 };
-                merged[app.Id] = BuildAppPayload(app, windowsByApp, runningExecutablePaths);
+                EnrichAppIdentity(app, windowsByApp, runningProcesses);
+                merged[app.Id] = BuildAppPayload(app, windowsByApp, runningProcesses);
+                ClaimExecutablePaths(claimedExecutablePaths, app);
+            }
+
+            foreach (var entry in runningProcesses)
+            {
+                ThrowIfInterrupted();
+                if (claimedExecutablePaths.Contains(entry.Key) || merged.ContainsKey(entry.Key))
+                {
+                    continue;
+                }
+
+                var process = entry.Value;
+                var app = new AppDescriptorDto
+                {
+                    Id = process.ExecutablePath,
+                    DisplayName = Path.GetFileNameWithoutExtension(process.ExecutablePath),
+                    ExecutablePath = process.ExecutablePath,
+                    ProcessNames = new List<string> { process.ProcessName },
+                    ProcessIds = new List<int>(process.ProcessIds),
+                    ActivationModel = "executable_path"
+                };
+                AddAlias(app, process.ExecutablePath);
+                merged[app.Id] = BuildAppPayload(app, windowsByApp, runningProcesses);
             }
 
             var result = new List<Dictionary<string, object>>(merged.Values);
@@ -1226,21 +1262,45 @@ namespace ComputerUse.NativeHost
                 };
             }
 
+            var emptyWindowsByApp = new Dictionary<string, List<Dictionary<string, object>>>(StringComparer.OrdinalIgnoreCase);
+            var runningProcesses = EnumerateRunningProcesses();
+            var requestedDescriptor = new AppDescriptorDto
+            {
+                Id = app,
+                DisplayName = app,
+                ActivationModel = "app_user_model_id"
+            };
             foreach (var candidate in EnumerateShellApps())
             {
                 if (string.Equals(candidate.Id, app, StringComparison.OrdinalIgnoreCase))
                 {
+                    EnrichAppIdentity(candidate, emptyWindowsByApp, runningProcesses);
                     return candidate;
                 }
 
                 if (!string.IsNullOrWhiteSpace(candidate.ExecutablePath) &&
                     string.Equals(candidate.ExecutablePath, app, StringComparison.OrdinalIgnoreCase))
                 {
+                    EnrichAppIdentity(candidate, emptyWindowsByApp, runningProcesses);
+                    return candidate;
+                }
+
+                if (!string.IsNullOrWhiteSpace(candidate.DisplayName) &&
+                    string.Equals(candidate.DisplayName, app, StringComparison.OrdinalIgnoreCase))
+                {
+                    EnrichAppIdentity(candidate, emptyWindowsByApp, runningProcesses);
+                    return candidate;
+                }
+
+                if (LooksLikeSameProduct(candidate, app) || LooksLikeSameProduct(requestedDescriptor, candidate.Id))
+                {
+                    EnrichAppIdentity(candidate, emptyWindowsByApp, runningProcesses);
                     return candidate;
                 }
             }
 
-            return null;
+            EnrichAppIdentity(requestedDescriptor, emptyWindowsByApp, runningProcesses);
+            return requestedDescriptor;
         }
 
         private bool IsExistingSessionRunning(string requestedApp, AppDescriptorDto launchTarget)
@@ -2651,13 +2711,12 @@ namespace ComputerUse.NativeHost
         private Dictionary<string, object> BuildAppPayload(
             AppDescriptorDto app,
             IDictionary<string, List<Dictionary<string, object>>> windowsByApp,
-            ISet<string> runningExecutablePaths
+            IDictionary<string, RunningProcessInfo> runningProcesses
         )
         {
-            List<Dictionary<string, object>> windows;
-            windowsByApp.TryGetValue(app.Id, out windows);
+            var windows = ResolveAppWindows(app, windowsByApp);
             var hasVisibleWindow = windows != null && windows.Count > 0;
-            var hasRunningProcess = HasRunningExecutableProcess(app, runningExecutablePaths);
+            var hasRunningProcess = HasRunningExecutableProcess(app, runningProcesses);
 
             var payload = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             payload["id"] = app.Id;
@@ -2675,30 +2734,388 @@ namespace ComputerUse.NativeHost
                 payload["executablePath"] = app.ExecutablePath;
             }
 
+            if (app.Aliases != null && app.Aliases.Count > 0)
+            {
+                payload["aliases"] = app.Aliases;
+            }
+
+            if (app.ProcessNames != null && app.ProcessNames.Count > 0)
+            {
+                payload["processNames"] = app.ProcessNames;
+            }
+
+            if (app.ProcessIds != null && app.ProcessIds.Count > 0)
+            {
+                payload["processIds"] = app.ProcessIds;
+            }
+
+            if (!string.IsNullOrWhiteSpace(app.TaskbarLabel))
+            {
+                payload["taskbarLabel"] = app.TaskbarLabel;
+            }
+
             return payload;
         }
 
-        private bool HasRunningExecutableProcess(AppDescriptorDto app, ISet<string> runningExecutablePaths)
+        private void EnrichAppIdentity(
+            AppDescriptorDto app,
+            IDictionary<string, List<Dictionary<string, object>>> windowsByApp,
+            IDictionary<string, RunningProcessInfo> runningProcesses
+        )
         {
-            if (!string.IsNullOrWhiteSpace(app.ExecutablePath) && runningExecutablePaths.Contains(app.ExecutablePath))
+            var executablePath = ResolveAppExecutablePath(app, windowsByApp, runningProcesses);
+            if (!string.IsNullOrWhiteSpace(executablePath))
+            {
+                if (string.IsNullOrWhiteSpace(app.ExecutablePath))
+                {
+                    app.ExecutablePath = executablePath;
+                }
+                AddAlias(app, executablePath);
+                AddProcessName(app, executablePath);
+                RunningProcessInfo process;
+                if (runningProcesses.TryGetValue(executablePath, out process))
+                {
+                    AddProcessInfo(app, process);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(app.Id))
+            {
+                AddAlias(app, app.Id);
+            }
+
+            if (!string.IsNullOrWhiteSpace(app.DisplayName) && string.IsNullOrWhiteSpace(app.TaskbarLabel))
+            {
+                app.TaskbarLabel = app.DisplayName;
+            }
+        }
+
+        private List<Dictionary<string, object>> ResolveAppWindows(
+            AppDescriptorDto app,
+            IDictionary<string, List<Dictionary<string, object>>> windowsByApp
+        )
+        {
+            var windows = new List<Dictionary<string, object>>();
+            foreach (var appId in ResolveAppWindowAppIds(app, windowsByApp))
+            {
+                List<Dictionary<string, object>> appWindows;
+                if (windowsByApp.TryGetValue(appId, out appWindows))
+                {
+                    windows.AddRange(appWindows);
+                }
+            }
+
+            return windows;
+        }
+
+        private List<string> ResolveAppWindowAppIds(
+            AppDescriptorDto app,
+            IDictionary<string, List<Dictionary<string, object>>> windowsByApp
+        )
+        {
+            var result = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var key in BuildAppIdentityKeys(app))
+            {
+                if (windowsByApp.ContainsKey(key) && seen.Add(key))
+                {
+                    result.Add(key);
+                }
+            }
+
+            foreach (var entry in windowsByApp)
+            {
+                if (seen.Contains(entry.Key))
+                {
+                    continue;
+                }
+                if (LooksLikeSameProduct(app, entry.Key) && seen.Add(entry.Key))
+                {
+                    result.Add(entry.Key);
+                }
+            }
+
+            return result;
+        }
+
+        private string ResolveAppExecutablePath(
+            AppDescriptorDto app,
+            IDictionary<string, List<Dictionary<string, object>>> windowsByApp,
+            IDictionary<string, RunningProcessInfo> runningProcesses
+        )
+        {
+            foreach (var key in BuildAppIdentityKeys(app))
+            {
+                if (LooksLikeExecutablePath(key) && runningProcesses.ContainsKey(key))
+                {
+                    return key;
+                }
+            }
+
+            foreach (var appId in ResolveAppWindowAppIds(app, windowsByApp))
+            {
+                if (LooksLikeExecutablePath(appId))
+                {
+                    return appId;
+                }
+            }
+
+            foreach (var runningExecutablePath in runningProcesses.Keys)
+            {
+                if (LooksLikeSameProduct(app, runningExecutablePath))
+                {
+                    return runningExecutablePath;
+                }
+            }
+
+            return null;
+        }
+
+        private List<string> BuildAppIdentityKeys(AppDescriptorDto app)
+        {
+            var keys = new List<string>();
+            AddIdentityKey(keys, app.Id);
+            AddIdentityKey(keys, app.ExecutablePath);
+            if (app.Aliases != null)
+            {
+                foreach (var alias in app.Aliases)
+                {
+                    AddIdentityKey(keys, alias);
+                }
+            }
+            return keys;
+        }
+
+        private static void AddIdentityKey(List<string> keys, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+            var trimmed = value.Trim();
+            if (!keys.Contains(trimmed))
+            {
+                keys.Add(trimmed);
+            }
+            foreach (var key in BuildComparableNames(value))
+            {
+                if (!keys.Contains(key))
+                {
+                    keys.Add(key);
+                }
+            }
+        }
+
+        private static bool LooksLikeSameProduct(AppDescriptorDto app, string candidate)
+        {
+            var candidateNames = BuildComparableNames(candidate);
+            foreach (var name in BuildComparableNames(app.DisplayName))
+            {
+                if (candidateNames.Contains(name))
+                {
+                    return true;
+                }
+            }
+            foreach (var name in BuildComparableNames(app.Id))
+            {
+                if (candidateNames.Contains(name))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static List<string> BuildComparableNames(string value)
+        {
+            var result = new List<string>();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return result;
+            }
+
+            var trimmed = value.Trim();
+            AddComparableName(result, trimmed);
+            try
+            {
+                var fileName = Path.GetFileName(trimmed);
+                if (!string.IsNullOrWhiteSpace(fileName))
+                {
+                    AddComparableName(result, fileName);
+                    AddComparableName(result, Path.GetFileNameWithoutExtension(fileName));
+                }
+            }
+            catch
+            {
+            }
+
+            return result;
+        }
+
+        private static void AddComparableName(List<string> result, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+            var normalized = value.Trim().ToLowerInvariant();
+            if (normalized.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized.Substring(0, normalized.Length - 4);
+            }
+            if (normalized.Length > 0 && !result.Contains(normalized))
+            {
+                result.Add(normalized);
+            }
+        }
+
+        private static void AddAlias(AppDescriptorDto app, string alias)
+        {
+            if (string.IsNullOrWhiteSpace(alias))
+            {
+                return;
+            }
+            if (app.Aliases == null)
+            {
+                app.Aliases = new List<string>();
+            }
+            if (!app.Aliases.Contains(alias))
+            {
+                app.Aliases.Add(alias);
+            }
+        }
+
+        private static void AddProcessName(AppDescriptorDto app, string executablePath)
+        {
+            if (string.IsNullOrWhiteSpace(executablePath))
+            {
+                return;
+            }
+            var processName = Path.GetFileName(executablePath);
+            if (string.IsNullOrWhiteSpace(processName))
+            {
+                return;
+            }
+            if (app.ProcessNames == null)
+            {
+                app.ProcessNames = new List<string>();
+            }
+            if (!app.ProcessNames.Contains(processName))
+            {
+                app.ProcessNames.Add(processName);
+            }
+        }
+
+        private static void AddProcessInfo(AppDescriptorDto app, RunningProcessInfo process)
+        {
+            if (process == null)
+            {
+                return;
+            }
+
+            AddProcessName(app, process.ExecutablePath);
+            if (app.ProcessIds == null)
+            {
+                app.ProcessIds = new List<int>();
+            }
+            foreach (var processId in process.ProcessIds)
+            {
+                if (processId > 0 && !app.ProcessIds.Contains(processId))
+                {
+                    app.ProcessIds.Add(processId);
+                }
+            }
+        }
+
+        private static void ClaimExecutablePaths(ISet<string> claimedExecutablePaths, AppDescriptorDto app)
+        {
+            if (LooksLikeExecutablePath(app.ExecutablePath))
+            {
+                claimedExecutablePaths.Add(app.ExecutablePath);
+            }
+            if (LooksLikeExecutablePath(app.Id))
+            {
+                claimedExecutablePaths.Add(app.Id);
+            }
+            if (app.Aliases == null)
+            {
+                return;
+            }
+            foreach (var alias in app.Aliases)
+            {
+                if (LooksLikeExecutablePath(alias))
+                {
+                    claimedExecutablePaths.Add(alias);
+                }
+            }
+        }
+
+        private bool HasRunningExecutableProcess(AppDescriptorDto app, IDictionary<string, RunningProcessInfo> runningProcesses)
+        {
+            if (!string.IsNullOrWhiteSpace(app.ExecutablePath) && runningProcesses.ContainsKey(app.ExecutablePath))
             {
                 return true;
             }
 
-            return LooksLikeExecutablePath(app.Id) && runningExecutablePaths.Contains(app.Id);
+            foreach (var alias in app.Aliases ?? new List<string>())
+            {
+                if (LooksLikeExecutablePath(alias) && runningProcesses.ContainsKey(alias))
+                {
+                    return true;
+                }
+            }
+
+            return LooksLikeExecutablePath(app.Id) && runningProcesses.ContainsKey(app.Id);
         }
 
         private HashSet<string> EnumerateRunningExecutablePaths()
         {
-            var running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return new HashSet<string>(EnumerateRunningProcesses().Keys, StringComparer.OrdinalIgnoreCase);
+        }
+
+        private Dictionary<string, RunningProcessInfo> EnumerateRunningProcesses()
+        {
+            var running = new Dictionary<string, RunningProcessInfo>(StringComparer.OrdinalIgnoreCase);
+            int? currentSessionId = null;
+            try
+            {
+                using (var currentProcess = Process.GetCurrentProcess())
+                {
+                    currentSessionId = currentProcess.SessionId;
+                }
+            }
+            catch
+            {
+            }
+
             foreach (var process in Process.GetProcesses())
             {
                 try
                 {
+                    if (currentSessionId.HasValue && process.SessionId != currentSessionId.Value)
+                    {
+                        continue;
+                    }
+
                     var processPath = GetProcessPath((uint)process.Id);
                     if (!string.IsNullOrWhiteSpace(processPath))
                     {
-                        running.Add(processPath);
+                        RunningProcessInfo info;
+                        if (!running.TryGetValue(processPath, out info))
+                        {
+                            info = new RunningProcessInfo
+                            {
+                                ExecutablePath = processPath,
+                                ProcessName = Path.GetFileName(processPath),
+                                ProcessIds = new List<int>()
+                            };
+                            running[processPath] = info;
+                        }
+
+                        if (!info.ProcessIds.Contains(process.Id))
+                        {
+                            info.ProcessIds.Add(process.Id);
+                        }
                     }
                 }
                 catch
@@ -2715,26 +3132,8 @@ namespace ComputerUse.NativeHost
 
         private bool HasRunningExecutableProcess(string executablePath)
         {
-            foreach (var process in Process.GetProcesses())
-            {
-                try
-                {
-                    var processPath = GetProcessPath((uint)process.Id);
-                    if (string.Equals(processPath, executablePath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-                catch
-                {
-                }
-                finally
-                {
-                    process.Dispose();
-                }
-            }
-
-            return false;
+            return !string.IsNullOrWhiteSpace(executablePath) &&
+                EnumerateRunningProcesses().ContainsKey(executablePath);
         }
 
         private static object InvokeCom(object target, string name, params object[] args)
@@ -4379,7 +4778,18 @@ namespace ComputerUse.NativeHost
         public string Id;
         public string DisplayName;
         public string ExecutablePath;
+        public List<string> Aliases;
+        public List<string> ProcessNames;
+        public List<int> ProcessIds;
+        public string TaskbarLabel;
         public string ActivationModel;
+    }
+
+    internal sealed class RunningProcessInfo
+    {
+        public string ExecutablePath;
+        public string ProcessName;
+        public List<int> ProcessIds;
     }
 
     internal sealed class TurnContext
