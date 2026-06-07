@@ -58,6 +58,11 @@ export interface ActionTraceEvidence {
   turnId: string;
   hostSource: string;
   driverName: string;
+  runtime: {
+    driverName: string;
+    listAppsSchemaVersion: "computer-use/list-apps/v1";
+    capabilities?: Record<string, unknown>;
+  };
   startedAt: string;
   endedAt: string;
   durationMs: number;
@@ -113,6 +118,7 @@ export class TraceManager {
     private readonly lifecycle: LifecycleManager,
     private readonly interrupts: InterruptState,
     private readonly driverName: string,
+    private readonly driverCapabilities?: Record<string, unknown>,
     private readonly config?: TraceOptions
   ) {}
 
@@ -180,6 +186,11 @@ export class TraceManager {
             turnId,
             hostSource: args.request.meta?.host ?? "unknown",
             driverName: this.driverName,
+            runtime: {
+              driverName: this.driverName,
+              listAppsSchemaVersion: "computer-use/list-apps/v1",
+              ...(this.driverCapabilities ? { capabilities: this.driverCapabilities } : {})
+            },
             startedAt: startedAt.toISOString(),
             endedAt: endedAt.toISOString(),
             durationMs: endedAt.getTime() - startedAt.getTime(),

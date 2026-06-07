@@ -25,6 +25,12 @@ export function createDefaultRuntime(args: {
     lifecycle,
     interrupts,
     endTurn: new EndTurnCoordinator(lifecycle, interrupts),
-    trace: new TraceManager(lifecycle, interrupts, args.nativeBridge.driverName, args.trace)
+    trace: new TraceManager(
+      lifecycle,
+      interrupts,
+      args.nativeBridge.driverName,
+      args.nativeBridge.capabilities as Record<string, unknown> | undefined,
+      args.trace
+    )
   };
 }
