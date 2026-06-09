@@ -297,6 +297,10 @@ const tracePathsSchema: ToolInputSchema = {
     responsePath: {
       type: "string",
       description: "Absolute path to the redacted window-state JSON artifact."
+    },
+    uiaTreePath: {
+      type: "string",
+      description: "Absolute path to the complete UI Automation tree artifact when captured."
     }
   },
   additionalProperties: false
@@ -800,7 +804,23 @@ export function getClaudeToolOutputSchema(
                 }
               },
               screenshotDegradedReason: { type: "string" },
-              lastReturnedIndex: { type: "integer" }
+              lastReturnedIndex: { type: "integer" },
+              textOmitted: {
+                type: "boolean",
+                description: "True when the full accessibility tree was omitted from text content to keep the tool response small."
+              },
+              textCharCount: {
+                type: "integer",
+                description: "Character count of the serialized full accessibility tree before omission."
+              },
+              textArtifactPath: {
+                type: "string",
+                description: "Absolute path to the full accessibility tree JSON artifact when textOmitted is true."
+              },
+              textSummary: {
+                type: "object",
+                description: "Summary metadata for the compact accessibility tree returned in text."
+              }
             },
             required: ["screenshotRequested", "textRequested"],
             additionalProperties: false

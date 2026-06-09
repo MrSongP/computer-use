@@ -7,6 +7,7 @@ import {
   writeWindowStateTraceArtifacts
 } from "../../../trace/window-state-trace.js";
 import { getWindowStateCapability, validateWindowStateParams } from "./contract.js";
+import { compactWindowStateTextForResponse } from "./text-budget.js";
 
 export class GetWindowStateHandler {
   readonly definition = getWindowStateCapability;
@@ -34,12 +35,17 @@ export class GetWindowStateHandler {
         const tracePaths = await writeWindowStateTraceArtifacts(trace, state, {
           attachScreenshotTo: "before"
         });
+        const responseState = await compactWindowStateTextForResponse({
+          state,
+          request,
+          existingTextArtifactPath: tracePaths.uiaTreePath
+        });
         const result = Object.keys(tracePaths).length > 0
           ? {
-              ...state,
+              ...responseState,
               trace: tracePaths
             }
-          : state;
+          : responseState;
 
         return {
           id: request.id,

@@ -119,7 +119,7 @@ GOOD: request accessibility text only when it will drive the next action:
 { "method": "get_window_state", "params": { "window": "<targetWindow>", "include_screenshot": false, "include_text": true } }
 ```
 
-GOOD: when `include_text: true` returns a large tree, print or inspect only the relevant `AccessibilityNode` fields first: `index`, `role`, `name`, `value`, `bounds`, `patterns`, `secondaryActions`, and nearby `children`. Do not dump the full tree unless it is small or the user explicitly needs the whole tree.
+GOOD: when `include_text: true` returns `capture.textOmitted: true`, inspect the compact `text` summary fields first: `index`, `role`, `name`, `value`, `bounds`, `patterns`, `secondaryActions`, and nearby `children`. Read `capture.textArtifactPath` only when the summary is not enough.
 
 BAD: guessing or reconstructing a window instead of using one returned by `list_apps`, `list_windows`, `get_window`, or `get_window_state`:
 
@@ -175,7 +175,7 @@ GOOD: for canvas/hotkey apps, focus the work surface, clear modal state, then ba
 - After a stale handle or lost window binding, recover a current window object with `get_window({ id, app })` using an id and app from an earlier returned `WindowRef`.
 - By default, request both screenshot and text only when both will drive the next decision. For simple visual inspection, screenshot is enough. For element targeting, request text and use `element_index`.
 - Accessibility text is returned as a structured node tree under `text`. Element indexes are stable only for the latest `get_window_state({ include_text: true })` result.
-- When `include_text: true` may return a large tree, pass `max_elements`, `role_filter`, and `name_contains` to narrow the snapshot before inspecting fields. Do not dump the full tree unless it is small or the user explicitly needs it.
+- When `include_text: true` returns `capture.textOmitted: true`, use the compact `text` summary first; read `capture.textArtifactPath` only when you truly need the complete UIA tree. To narrow follow-up captures, pass `max_elements`, `role_filter`, and `name_contains`.
 - For Chromium Embedded IM apps such as QQ, WeChat, Enterprise WeChat, Feishu, and Lark, avoid UIA traversal on app content windows. Standard Windows common dialogs owned by those apps, such as file pickers and save dialogs, may expose UIA safely and can be handled with the common-dialog helpers.
 - For IM file attachments when the native picker path is unavailable or less stable, a host-assisted file clipboard workflow is acceptable: verify the local file path with host filesystem tools, prepare a Windows file-drop clipboard list with host APIs, paste into the already verified IM input area with Computer Use, inspect the resulting confirmation modal or file card, and keep the final send/upload action subject to the normal confirmation policy. This workflow must only prepare local clipboard state and paste it; it must not bypass destination verification or click the final send action on its own.
 - Screenshot captures are returned as direct MCP image content so the model can visually inspect them without reading files from trace output. The JSON text companion redacts `screenshot.data` but keeps dimensions, source, and coordinate metadata; coordinate clicks are window-relative by default, and `click({ coordinateSpace: "screenshot" })` should be used only with the `state.window` returned by that snapshot. Do not write screenshots to disk just to inspect them unless the user asked for saved evidence or trace is enabled for debugging.
@@ -530,11 +530,23 @@ type WindowStateResult = {
     }>;
     screenshotDegradedReason?: string;
     lastReturnedIndex?: number;
+    textOmitted?: boolean;
+    textCharCount?: number;
+    textArtifactPath?: string;
+    textSummary?: {
+      mode: "actionable_nodes";
+      originalNodeCount: number;
+      summaryNodeCount: number;
+      actionableNodeCount: number;
+      maxSummaryNodes: number;
+      note: string;
+    };
   };
   trace?: {
     screenshotPath?: string;
     rawScreenshotPath?: string;
     responsePath?: string;
+    uiaTreePath?: string;
   };
 };
 

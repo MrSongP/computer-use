@@ -91,12 +91,26 @@ export interface WindowStateResult {
     recommendedFallbacks?: readonly CaptureRecommendedFallback[];
     screenshotDegradedReason?: string;
     lastReturnedIndex?: number;
+    textOmitted?: boolean;
+    textCharCount?: number;
+    textArtifactPath?: string;
+    textSummary?: AccessibilityTextSummary;
   };
   trace?: {
     screenshotPath?: string;
     rawScreenshotPath?: string;
     responsePath?: string;
+    uiaTreePath?: string;
   };
+}
+
+export interface AccessibilityTextSummary {
+  mode: "actionable_nodes";
+  originalNodeCount: number;
+  summaryNodeCount: number;
+  actionableNodeCount: number;
+  maxSummaryNodes: number;
+  note: string;
 }
 
 export interface CaptureRecommendedFallback {

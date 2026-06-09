@@ -24,7 +24,10 @@ export async function writeWindowStateTraceArtifacts(
   }
 
   if (state.text) {
-    await trace.writeJsonArtifact(`${kindPrefix}uia`, `${filePrefix}uia-tree.json`, state.text);
+    const uia = await trace.writeJsonArtifact(`${kindPrefix}uia`, `${filePrefix}uia-tree.json`, state.text);
+    if (uia?.absolutePath) {
+      paths.uiaTreePath = uia.absolutePath;
+    }
   }
 
   if (state.screenshot?.raw) {
@@ -67,6 +70,7 @@ export interface WindowStateTraceArtifactPaths {
   screenshotPath?: string;
   rawScreenshotPath?: string;
   responsePath?: string;
+  uiaTreePath?: string;
 }
 
 export function stripTraceOnlyWindowStateFields(state: WindowStateResult): WindowStateResult {
