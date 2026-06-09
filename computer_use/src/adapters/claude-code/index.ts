@@ -29,7 +29,7 @@ export function createClaudeAdapter(
       summary: item.summary,
       requiresWindowActivation: item.requiresWindowActivation,
       inputSchema: getClaudeToolInputSchema(item.method),
-      outputSchema: getClaudeToolOutputSchema(item.method)
+      outputSchema: getAdvertisedOutputSchema(item.method)
     })),
     {
       name: "end_turn",
@@ -124,6 +124,16 @@ export function ensureClaudeHostMeta(meta: ClaudeCodeInvokeMeta | undefined): Js
     host: "claude-code",
     codexTurnMetadata: normalizedTurnMeta
   };
+}
+
+function getAdvertisedOutputSchema(
+  method: ClaudeCodeAdapterMethod
+): ReturnType<typeof getClaudeToolOutputSchema> {
+  if (method === "get_window_state") {
+    return undefined;
+  }
+
+  return getClaudeToolOutputSchema(method);
 }
 
 function normalizeTurnMeta(meta: ClaudeCodeInvokeMeta | undefined): TurnMetadata | undefined {

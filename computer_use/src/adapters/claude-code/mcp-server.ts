@@ -323,7 +323,9 @@ function toolResult(method: ClaudeCodeAdapterMethod, result: unknown): unknown {
   });
 
   const response: Record<string, unknown> = { content };
-  const structuredContent = toStructuredContent(method, sanitizedPayload);
+  const structuredContent = method === "get_window_state"
+    ? null
+    : toStructuredContent(method, sanitizedPayload);
   if (structuredContent) {
     response.structuredContent = structuredContent;
   }

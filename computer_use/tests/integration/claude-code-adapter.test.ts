@@ -182,9 +182,7 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.equal(listAppsTool.outputSchema.properties.apps.items.properties.aliases.items.type, "string");
     assert.equal(listAppsTool.outputSchema.properties.apps.items.properties.processIds.items.type, "integer");
     const windowStateTool = tools.result.tools.find((tool: { name: string }) => tool.name === "get_window_state");
-    assert.equal(windowStateTool.outputSchema.properties.trace.properties.screenshotPath.type, "string");
-    assert.equal(windowStateTool.outputSchema.properties.trace.properties.rawScreenshotPath.type, "string");
-    assert.equal(windowStateTool.outputSchema.properties.trace.properties.responsePath.type, "string");
+    assert.equal(windowStateTool.outputSchema, undefined);
     const launchAppTool = tools.result.tools.find((tool: { name: string }) => tool.name === "launch_app");
     assert.deepEqual(launchAppTool.outputSchema.properties.disposition.enum, ["delegated_launch", "observed_window"]);
     assert.equal(launchAppTool.outputSchema.properties.observedWindows.items.required.includes("app"), true);
@@ -214,8 +212,7 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.equal(windowState.result.content[1].type, "text");
     const textPayload = JSON.parse(windowState.result.content[1].text);
     assert.equal(textPayload.screenshot.data, "<base64:9 bytes>");
-    assert.equal(windowState.result.structuredContent.screenshot.data, "<base64:9 bytes>");
-    assert.equal(windowState.result.structuredContent.screenshot.source, "mock");
+    assert.equal(windowState.result.structuredContent, undefined);
 
     const endTurn = JSON.parse(endTurnLine!);
     assert.deepEqual(JSON.parse(endTurn.result.content[0].text), null);
