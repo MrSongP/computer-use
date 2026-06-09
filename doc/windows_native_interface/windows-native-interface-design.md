@@ -1,34 +1,33 @@
 # Windows Native Interface Design
 
-这份文档只保留长期有效的 Windows 实现边界，不再维护历史性的逐步实现叙述。
+This document records the stable Windows implementation boundaries for `computer_use`.
 
-## 1. 长期设计原则
+## Design Principles
 
-1. 上层依赖能力语义，不依赖底层 API 名称。
-2. `core contract -> windows service -> native bridge/native host` 的方向不能反过来。
-3. trace / lifecycle 与动作能力同等级维护，不能当作补丁功能。
-4. bridge 可以替换，但 contract 与 adapter 暴露面要尽量稳定。
+1. Upper layers depend on capability semantics, not low-level Windows API names.
+2. Dependency direction is `core contract -> windows service -> native bridge/native host`.
+3. Trace and lifecycle behavior are maintained as first-class runtime infrastructure.
+4. Bridge implementations may change, but contracts and adapter-facing schemas should stay stable unless the capability itself changes.
 
-## 2. 当前稳定分层
+## Stable Layers
 
-### 2.1 Shared Core
+### Shared Core
 
-- `src/core/contracts`
 - `src/core/capabilities`
 - `src/core/runtime`
 - `src/core/dispatcher`
 - `src/core/interrupt`
 - `src/core/trace`
 
-职责：
+Responsibilities:
 
-- 统一 contract
-- method registry / dispatch
+- capability contracts and handlers
+- method registry and dispatch
 - runtime context
-- lifecycle / interrupt
-- trace config 与 evidence writer
+- lifecycle and interrupt handling
+- trace config and evidence writing
 
-### 2.2 Windows Services
+### Windows Services
 
 - `src/windows/activation/window-activator.ts`
 - `src/windows/discovery/window-discovery-service.ts`
@@ -36,49 +35,55 @@
 - `src/windows/capture/window-state-service.ts`
 - `src/windows/uia/element-interaction-service.ts`
 - `src/windows/input/*.ts`
+- `src/windows/dialogs/common-dialog-service.ts`
 
-职责：
+Responsibilities:
 
-- 接收 core contract
-- 做参数归一化、执行编排和错误收敛
-- 调用底层 bridge / native host primitive
+- accept core capability requests
+- normalize parameters
+- coordinate execution
+- converge errors and diagnostics
+- call native bridge primitives
 
-### 2.3 Native Bridge / Native Host
+### Native Bridge And Native Host
 
 - `src/windows/bridge/native-bridge.ts`
 - `src/windows/bridge/create-native-bridge.ts`
 - `src/windows/bridge/native-host-driver.ts`
 - `native-host/ComputerUse.NativeHost/Program.cs`
 
-当前主路线：
+The resident .NET native host is the primary real Windows execution path. Compatibility bridge files may remain in the tree, but the native host is the project-supported path for full Windows behavior.
 
-- 默认真实执行路径是 resident `.NET` native host。
-- `powershell-driver.ts`、`ffi-driver.ts`、`napi-driver.ts` 仍保留，但不再作为文档主线。
+## Required Semantics
 
-## 3. 必须守住的语义
+- `click`, `scroll`, and `drag` use window-relative coordinates unless a tool explicitly accepts screenshot-relative coordinates with snapshot metadata.
+- `press_key` and `type_text` activate the target window before sending input.
+- `get_window_state` is both capture and window canonicalization. It is not only a screenshot function.
+- `get_window_state` exposes capture degradation and window health, including `wgc_failed` and `window.health.hung`.
+- UIA capabilities go through `ElementInteractionService`.
+- Turn lifecycle goes through `lifecycle-manager.ts` and `end-turn.ts`.
+- Interrupted turns and unfinished old turns are reset through `LifecycleManager.resetTurn`.
+- Native-host reset disposes the resident host process so queued work does not leak into a later turn.
 
-- `click` / `scroll` / `drag` 的坐标 contract 是窗口相对坐标。
-- `press_key` / `type_text` 先激活窗口，再下沉到底层键盘输入。
-- `get_window_state` 是 capture + window canonicalization 的入口，不只是截图。
-- `get_window_state` 必须暴露 capture 降级和窗口健康状态；WGC fallback 用 `wgc_failed` 表示，未响应窗口用 `window.health.hung` 表示。
-- UIA 相关能力统一走 `ElementInteractionService`，不要把 pattern 分散到 adapter 或 handler。
-- turn 生命周期统一走 `lifecycle-manager.ts` 与 `end-turn.ts`，不要在单个 capability 里私自清理状态。
-- 中断 turn 和未正常结束的旧 turn 必须通过 `LifecycleManager.resetTurn` 清理；native-host reset 必须 dispose resident host process。
+## Verification Surface
 
-## 4. 主要验证面
+Action and bridge tests:
 
-- 动作与桥接：
-  - `tests/unit/keyboard-input-service.test.ts`
-  - `tests/unit/text-input-service.test.ts`
-  - `tests/unit/pointer-input-service.test.ts`
-  - `tests/unit/native-bridge-factory.test.ts`
-- capture / UIA / native host：
-  - `tests/unit/window-state-service.test.ts`
-  - `tests/unit/element-interaction-service.test.ts`
-  - `tests/integration/native-host-p5-smoke.test.ts`
-- lifecycle / trace：
-  - `tests/unit/interrupt-files.test.ts`
-  - `tests/unit/native-host-driver.test.ts`
-  - `tests/unit/trace-config.test.ts`
-  - `tests/integration/trace-evidence.test.ts`
-  - `tests/integration/stdio-runtime.test.ts`
+- `tests/unit/keyboard-input-service.test.ts`
+- `tests/unit/text-input-service.test.ts`
+- `tests/unit/pointer-input-service.test.ts`
+- `tests/unit/native-bridge-factory.test.ts`
+
+Capture, UIA, and native-host tests:
+
+- `tests/unit/window-state-service.test.ts`
+- `tests/unit/element-interaction-service.test.ts`
+- `tests/integration/native-host-p5-smoke.test.ts`
+
+Lifecycle and trace tests:
+
+- `tests/unit/interrupt-files.test.ts`
+- `tests/unit/native-host-driver.test.ts`
+- `tests/unit/trace-config.test.ts`
+- `tests/integration/trace-evidence.test.ts`
+- `tests/integration/stdio-runtime.test.ts`

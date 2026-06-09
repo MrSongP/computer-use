@@ -1,8 +1,8 @@
 # IDE / Editor
 .idea/
 
-# Claude Code session & config
-.claude/
+# Claude Code local (per-machine) settings — keep agent/ and shared *.md
+.claude/settings.local.json
 
 # Local tool / cache
 .omx/

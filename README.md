@@ -111,12 +111,11 @@ npm run doctor:claude
 
 ## Documentation
 
-- Project handoff: [doc/computer-use.md](./doc/computer-use.md)
 - Documentation index: [doc/README.md](./doc/README.md)
-- Architecture harness: [doc/harness/architecture.md](./doc/harness/architecture.md)
-- Action lane harness: [doc/harness/action-lane.md](./doc/harness/action-lane.md)
-- Plugin installation harness: [doc/harness/plugin-installation.md](./doc/harness/plugin-installation.md)
+- Project overview: [doc/computer-use.md](./doc/computer-use.md)
 - Capability matrix: [doc/acceptance/capability-matrix.md](./doc/acceptance/capability-matrix.md)
+- Windows native interface: [doc/windows_native_interface/windows-native-interface-design.md](./doc/windows_native_interface/windows-native-interface-design.md)
+- Agent harness: [.claude/computer-use-harness.md](./.claude/computer-use-harness.md) and [.agents/computer-use-harness.md](./.agents/computer-use-harness.md)
 
 ## Windows Notes
 

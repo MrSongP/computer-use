@@ -111,12 +111,11 @@ npm run doctor:claude
 
 ## 文档
 
-- 项目 handoff：[doc/computer-use.md](./doc/computer-use.md)
 - 文档入口：[doc/README.md](./doc/README.md)
-- 架构 harness：[doc/harness/architecture.md](./doc/harness/architecture.md)
-- action lane harness：[doc/harness/action-lane.md](./doc/harness/action-lane.md)
-- 插件安装 harness：[doc/harness/plugin-installation.md](./doc/harness/plugin-installation.md)
+- 项目总览：[doc/computer-use.md](./doc/computer-use.md)
 - 能力矩阵：[doc/acceptance/capability-matrix.md](./doc/acceptance/capability-matrix.md)
+- Windows native interface：[doc/windows_native_interface/windows-native-interface-design.md](./doc/windows_native_interface/windows-native-interface-design.md)
+- Agent harness：[.claude/computer-use-harness.md](./.claude/computer-use-harness.md) 和 [.agents/computer-use-harness.md](./.agents/computer-use-harness.md)
 
 ## Windows 兼容说明
 

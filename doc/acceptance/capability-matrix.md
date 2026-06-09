@@ -1,8 +1,8 @@
 # Capability Matrix
 
-这份矩阵现在只保留“当前能力是否闭环、代码锚点在哪里、用什么测试证明”。
+This matrix records the supported capability surface, implementation anchors, and primary verification evidence.
 
-## 1. 能力总表
+## Capability Table
 
 | Capability | 状态 | 代码锚点 | 主要验证 |
 | --- | --- | --- | --- |
@@ -22,8 +22,8 @@
 | `activate_window` | `done` | `src/core/capabilities/actions/activate-window` + `src/windows/activation/window-activator.ts` | `tests/integration/action-lane.test.ts` |
 | `end_turn` | `done` | `src/core/interrupt/end-turn.ts` + `src/core/runtime/lifecycle-manager.ts` + `src/windows/bridge/native-host-driver.ts` | `tests/unit/interrupt-files.test.ts`、`tests/unit/native-host-driver.test.ts`、`tests/integration/stdio-runtime.test.ts` |
 
-## 2. 读这张表时的规则
+## Maintenance Rules
 
-- `done` 表示 contract、handler、service、bridge/runtime、宿主暴露和测试证据都已经存在。
-- 需要深入细节时，优先看这里给出的代码锚点和测试，而不是回头补分散的设计文档。
-- 如果能力行为被改动，这张表至少要同步回写“代码锚点”或“主要验证”。
+- `done` means the contract, handler, service, bridge/runtime path, host exposure, and test evidence exist.
+- For implementation detail, start from the code anchors and tests in this table.
+- If capability behavior changes, update the relevant code anchor or verification entry here.

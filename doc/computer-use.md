@@ -1,114 +1,94 @@
-# computer-use 插件高保真复现实现路线图
+# computer_use Project Overview
 
-这个文件保留为项目主 handoff 文档。它不再承担逐 capability 的长篇设计说明，只保留接手顺序、当前完成状态、安装入口和未来修改时必须先看的边界。
+`computer_use` is a local Windows computer-use plugin for Codex and Claude Code. It exposes atomic desktop automation tools through a TypeScript runtime, an MCP server, and a resident Windows native host.
 
-## 1. 当前状态
+The plugin is built for agents. It provides facts and actions for Windows UI automation; agents remain responsible for choosing the correct app, interpreting task intent, verifying destinations, and deciding when a workflow is complete.
 
-- 截至 2026-06-03，`computer_use` 的共享核心、Windows 实现、native host、Codex adapter 和 Claude Code adapter 都已经落地。
-- 所有主能力已经具备实现与测试覆盖：
-  - discovery / launch：`list_apps`、`list_windows`、`get_window`、`launch_app`
-  - capture / UIA：`get_window_state`、`click_element`、`set_value`、`perform_secondary_action`
-  - action / lifecycle：`activate_window`、`click`、`press_key`、`type_text`、`scroll`、`drag`、`end_turn`
-- trace/debug 已经收敛为共享能力，可通过 env、runtime config 或 request meta 开关。
-- `launch_app` 现在默认是 policy hook：发现已有实例时会拒绝重复冷启动，并返回“转去任务栏/托盘恢复现有会话”的 guidance 和 `followUpActions`；只有显式要求时才应该 `force_new`。成功时返回结构化 launch report，不再返回无信息的 `null`，并会短暂观察匹配窗口、返回 `observedWindows` 与 `followUpActions`。
-- `get_window_state` 会返回截图坐标映射和可见点击区域；trace 开启时直接回传截图/响应 artifact 绝对路径。`click` 默认仍使用 window-relative 坐标，也支持显式 `coordinateSpace: "screenshot"`。
-- 标准 Windows file/folder/save dialogs 可以通过 `select_file_in_dialog`、`select_folder_in_dialog`、`set_save_path_in_dialog` 完成本地路径选择；这些 helper 不会执行目标 app 的发送、上传或发布动作。
-- 风险 IM/Chromium app 的内容窗口仍避免 UIA traversal，但 native common dialog 会按窗口 class/title allowlist 放行。
-- `list_apps` 会额外暴露 `windows.shell.taskbar`，作为 taskbar/notification area 的正式截图与点击目标；支持 `name_contains`、`id_contains` / `id_includes`、`running_only`、`has_windows`、`limit` 等过滤参数，并返回 `diagnostics` 说明过滤/截断情况。结果也带 `runtime.schemaVersion` / driver capability 信息，并保留 launcher、exe、process、taskbar label 等身份线索，方便把 `QQ` 这类友好入口和真实运行进程合并理解。当前用户会话里只有后台进程、没有可见窗口或 AppsFolder 入口的程序，也会作为 `executable_path` app 返回，并用 `isRunning: true`、`windows: []`、`processIds` 表达后台运行状态。
-- `click_element` 返回结构化 dispatch report，不再用 `null` 表示已调度。`click({ coordinateSpace: "screenshot" })` 必须使用 `get_window_state` 返回的 `state.window`，缺少截图坐标映射元数据会直接报错并给出重试 guidance。
-- 针对 Claude Code 使用报告的完整处置记录见 [`review-response.md`](./review-response.md)。
-- 使用插件时仍可结合宿主的 shell/bash/文件搜索等工具定位 exe、验证文件和排查环境；插件不是唯一可用工具集。
-- WGC smoke 在沙箱/受限 session 中不可用时不代表机器不支持 WGC；需要在沙箱外重新跑 native-host P5 smoke 再下结论。
-- 插件根目录是 `D:\Desktop\computer-use\computer_use`，不是根目录 `scripts` 下的官方兼容客户端包装。
-- Claude Code 安装入口是 repo-local marketplace：`D:\Desktop\computer-use\.claude-plugin\marketplace.json`。
-- Claude Code 的用户级权限入口是：`%USERPROFILE%\.claude\settings.json`。安装脚本会把 `mcp__plugin_computer-use_computer-use` 合并进去，避免 `computer-use` MCP 工具每一步都要求点 `Yes`。
-- Codex 安装入口是 repo-local marketplace：`D:\Desktop\computer-use\.agents\plugins\marketplace.json`。
+## Current Capability Surface
 
-## 2. 安装与使用入口
+The runtime exposes these capabilities:
 
-Claude Code 与 Codex 分开安装。
+- Discovery and launch: `list_apps`, `list_windows`, `get_window`, `launch_app`
+- Window state capture: `get_window_state`
+- Window focus: `activate_window`
+- Pointer input: `click`, `drag`, `scroll`
+- Keyboard and text input: `press_key`, `type_text`
+- UI Automation actions: `click_element`, `set_value`, `perform_secondary_action`
+- Standard Windows dialog helpers: `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`
+- Turn lifecycle and debug evidence: `end_turn`, interrupt handling, trace evidence
 
-Claude Code：
+`launch_app` uses a reuse-or-launch policy by default. When an existing session is detected, it returns guidance for restoring the app through `windows.shell.taskbar`; only an explicit `force_new` request should create a new instance.
 
-```powershell
-cd D:\Desktop\computer-use
-npm run install:claude
-```
+`get_window_state` returns the canonical window object for follow-up calls, screenshot metadata, coordinate mapping, visible/clickable region metadata, optional structured UIA text, capture diagnostics, and trace artifact paths when trace is enabled.
 
-Codex：
+Dialog helpers complete only local standard Windows dialogs. They do not send, upload, publish, or submit anything inside the destination app.
+
+## Implementation Layout
+
+- `computer_use/.codex-plugin/plugin.json` packages the Codex plugin.
+- `computer_use/.claude-plugin/plugin.json` packages the Claude Code plugin.
+- `computer_use/.mcp.json` declares the local MCP stdio server.
+- `computer_use/skills/computer-use/SKILL.md` describes the agent workflow for using the plugin.
+- `computer_use/src/core/` contains contracts, capability handlers, dispatch, lifecycle, interrupt handling, runtime context, and trace infrastructure.
+- `computer_use/src/windows/` contains Windows services for discovery, launch, capture, activation, input, UIA, dialogs, and native-host bridging.
+- `computer_use/src/adapters/` maps the shared runtime into Codex and Claude Code surfaces.
+- `computer_use/native-host/ComputerUse.NativeHost/` contains the resident .NET Windows host.
+- `computer_use/tests/` contains unit, integration, adapter, stdio, trace, and native-host smoke tests.
+
+## Installation Entry Points
+
+Install into Codex:
 
 ```powershell
 cd D:\Desktop\computer-use
 npm run install:codex
 ```
 
-`npm run install:claude` 会安装 TypeScript 依赖、编译 runtime、编译 C# native host、验证 Claude marketplace 和 plugin manifest、运行 MCP smoke test、注册 Claude marketplace、重装 `computer-use@computer-use-local`，并提示你在当前会话执行 `/reload-plugins` 或开新会话。
+Install into Claude Code:
 
-安装器还会自动更新用户级 `~/.claude/settings.json`，把 `mcp__plugin_computer-use_computer-use` 加入 allowlist，所以不依赖 Claude Code 从哪个目录启动。
+```powershell
+cd D:\Desktop\computer-use
+npm run install:claude
+```
 
-`npm run install:codex` 会注册 Codex marketplace、重装 `computer-use@computer-use-local`，并提示你开新线程验证 skill 与 MCP tools 是否加载。
+Install both:
 
-安装后的正常入口：
+```powershell
+npm run install:all
+```
 
-- skill：`computer_use\skills\computer-use\SKILL.md`
-- MCP manifest：`computer_use\.mcp.json`
-- MCP entrypoint：`computer_use\dist\src\adapters\claude-code\mcp-entrypoint.js`
-- Codex manifest：`computer_use\.codex-plugin\plugin.json`
-- Claude manifest：`computer_use\.claude-plugin\plugin.json`
+The installer builds the TypeScript runtime, builds the C# native host, runs the MCP smoke test, registers the local marketplace, installs the plugin, and runs the relevant doctor check.
 
-`scripts\computer-use-client.mjs` 不再需要。它只会把执行路径带回官方缓存里的 compatibility client，不能代表这个项目的 TypeScript runtime、native-host bridge、MCP schema 或测试证据。
+## Development Checks
 
-## 3. 接手顺序
+Run the default checks from the repository root:
 
-1. 先读仓库根 [`README.md`](../README.md)
-2. 再读：
-   - `acceptance/capability-matrix.md`
-   - `acceptance/phase-acceptance-matrix.md`
-   - `acceptance/final-done-checklist.md`
-3. 然后读：
-   - `windows_native_interface/windows-native-interface-design.md`
-   - `scaffold_status/current-scaffold-status-and-next-steps.md`
-   - `harness/architecture.md`
-   - `harness/action-lane.md`
-   - `harness/plugin-installation.md`
-4. 最后再进代码：
-   - `computer_use/src/core`
-   - `computer_use/src/windows`
-   - `computer_use/src/adapters`
-   - `computer_use/native-host/ComputerUse.NativeHost`
+```powershell
+npm run typecheck
+npm test
+```
 
-## 4. 未来修改的基本原则
+Useful focused checks:
 
-- 不再新增逐 capability 的 `investigation` / `implementation-guide` 文档目录。
-- 文档只保留长期边界、验收口径和接手入口；具体细节优先写进代码和测试。
-- 改 capability 时，同时更新 capability matrix / phase matrix / final checklist 中对应条目。
-- 临时 trace、repro、bug 证据不要长期留在仓库里。
-- 改插件 manifest、MCP schema、安装路径或 skill 时，必须同步 README 与 `harness/plugin-installation.md`。
+```powershell
+npm --prefix computer_use run test -- tests/integration/codex-adapter.test.ts
+npm --prefix computer_use run test -- tests/integration/claude-code-adapter.test.ts
+npm --prefix computer_use run test -- tests/integration/stdio-runtime.test.ts
+npm --prefix computer_use run test -- tests/integration/native-host-p5-smoke.test.ts
+npm run doctor:codex
+npm run doctor:claude
+```
 
-## 5. 验证入口
+## Documentation Map
 
-项目实现根：`D:\Desktop\computer-use\computer_use`
+- Documentation index: `doc/README.md`
+- Capability matrix: `doc/acceptance/capability-matrix.md`
+- Windows native interface: `doc/windows_native_interface/windows-native-interface-design.md`
+- Agent harness: `.claude/computer-use-harness.md` and `.agents/computer-use-harness.md`
+- Maintenance checklist: `.claude/computer-use-maintenance-checklist.md` and `.agents/computer-use-maintenance-checklist.md`
+- Installation harness: `.claude/computer-use-installation-harness.md` and `.agents/computer-use-installation-harness.md`
+- Plugin test agent: `.claude/agent/computer-use-plugin-test-agent.md`
 
-常用验证命令：
+## Documentation Boundary
 
-- `npm run typecheck`
-- `npm test`
-- `npx tsx --test tests/integration/codex-adapter.test.ts`
-- `npx tsx --test tests/integration/claude-code-adapter.test.ts`
-- `npx tsx --test tests/integration/native-host-p5-smoke.test.ts`
-- `npx tsx --test tests/integration/stdio-runtime.test.ts`
-- `node .\scripts\smoke-claude-mcp.mjs`
-- `npm run doctor:claude`
-- `npm run doctor:codex`
-
-## 6. 为什么文档被收缩
-
-这个仓库之前积累了大量阶段性 reverse-analysis 文档，但很多内容已经被代码与测试取代，继续并行维护只会制造过期信息。现在外层 `doc/` 保留的是：
-
-- 接手入口
-- 安装入口
-- 能力与阶段验收口径
-- 长期架构边界
-- 当前实现状态
-
-其余短生命周期材料已经移除。
+`doc/` contains project documentation for humans. Agent-specific operating contracts live in `.claude/` and `.agents/`. Temporary investigation notes, trace artifacts, and one-off repro evidence should not be committed as long-term documentation.
