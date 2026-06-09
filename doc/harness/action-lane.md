@@ -8,6 +8,9 @@
 - `type_text`
 - `scroll`
 - `drag`
+- `click_element`
+- `set_value`
+- `perform_secondary_action`
 
 ## 主链路
 
@@ -26,6 +29,15 @@
 - `scroll` / `drag` 共用 pointer primitive 和同一套 trace/evidence 结构。
 - MCP 对外参数以本地 schema 为准：`scroll` 使用 `scroll_x` / `scroll_y`，元素操作使用 `element_index`，窗口对象必须来自 `list_apps`、`list_windows`、`get_window` 或 `get_window_state`。
 - `get_window_state` 的 UIA 输出是结构化 `text` 节点树；不要按官方兼容客户端的字符串 tree 形态写新逻辑。
+
+## action result 边界
+
+- RPC 外壳保持统一：成功返回 `{ ok: true, result }`，失败返回 `{ ok: false, error, code, details, guidance }`。
+- `result` 不强行统一成一个大 report；每个工具按自己的执行语义返回专属 payload。
+- action 成功返回只证明该工具能直接观测或控制的事实，例如窗口激活计划、按键解析、输入事件派发、坐标解算、UIA pattern 调用、标准 dialog 是否关闭。
+- action 成功返回不证明目标应用的业务语义已经完成，例如消息已发送、文件已上传、页面已滚到目标内容、弹窗已按预期出现。
+- 不允许用 `null` 表示“应该成功了”。如果工具执行成功但没有业务态验证能力，返回值必须显式描述已完成的派发事实，并让 agent 知道哪些结果仍需通过 `get_window_state`、trace 或后续观察判断。
+- trace 开启时，action 可以返回轻量 `stateDiff` 摘要；完整截图、UIA 树和 before/after 证据仍保存在 trace artifacts，避免普通响应膨胀。
 
 ## click / native 职责边界
 

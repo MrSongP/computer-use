@@ -62,10 +62,14 @@ test("claude code adapter drives shared capabilities and writes host-scoped trac
     };
     assert.equal(clickResult.ok, true);
     assert.deepEqual(clickResult.screenPoint, { x: 80, y: 140 });
-    assert.deepEqual(
-      await adapter.invoke("type_text", { window, text: "hello from claude" }, { meta: turnMeta }),
-      null
-    );
+    const typeTextResult = await adapter.invoke("type_text", { window, text: "hello from claude" }, { meta: turnMeta }) as any;
+    assert.equal(typeTextResult.ok, true);
+    assert.deepEqual(typeTextResult.dispatched, {
+      kind: "text",
+      inputMethod: "sendText",
+      textLength: 17,
+      utf16CodeUnits: 17
+    });
     await adapter.endTurn(turnMeta);
 
     assert.equal(await countActionDirs(traceDir, "session-claude", "turn-one"), 4);

@@ -1,4 +1,4 @@
-import type { TypeTextParams } from "../../core/contracts/action.js";
+import type { ActivationPlan, TypeTextParams } from "../../core/contracts/action.js";
 import type { KeyboardInput } from "../shared/win32-types.js";
 import type { WindowActivationService } from "../activation/window-activator.js";
 
@@ -10,25 +10,48 @@ export interface TextInputPort {
   sendKeyboardInputs(inputs: readonly KeyboardInput[]): Promise<void>;
 }
 
+export interface TextInputExecution {
+  activation: ActivationPlan;
+  inputMethod: "sendText" | "unicodeKeyboardInputs";
+  textLength: number;
+  utf16CodeUnits: number;
+  inputEvents?: number;
+  fallbackFromSendText?: boolean;
+}
+
 export class TextInputService {
   constructor(
     private readonly activationService: WindowActivationService,
     private readonly port: TextInputPort
   ) {}
 
-  async typeText(params: TypeTextParams): Promise<void> {
-    await this.activationService.activate(params.window);
+  async typeText(params: TypeTextParams): Promise<TextInputExecution> {
+    const activation = await this.activationService.activate(params.window);
 
     if (typeof this.port.sendText === "function") {
       try {
         await this.port.sendText(params.text);
-        return;
+        return {
+          activation,
+          inputMethod: "sendText",
+          textLength: Array.from(params.text).length,
+          utf16CodeUnits: params.text.length
+        };
       } catch {
         // Fall back to Unicode keystrokes when direct text injection is unavailable.
       }
     }
 
-    await this.port.sendKeyboardInputs(buildUnicodeKeyboardInputs(params.text));
+    const inputs = buildUnicodeKeyboardInputs(params.text);
+    await this.port.sendKeyboardInputs(inputs);
+    return {
+      activation,
+      inputMethod: "unicodeKeyboardInputs",
+      textLength: Array.from(params.text).length,
+      utf16CodeUnits: params.text.length,
+      inputEvents: inputs.length,
+      fallbackFromSendText: typeof this.port.sendText === "function" ? true : undefined
+    };
   }
 }
 

@@ -1,5 +1,5 @@
 import type { JsonRpcRequest, JsonRpcResponse } from "../../../../core/contracts/rpc.js";
-import type { TypeTextParams } from "../../../../core/contracts/action.js";
+import type { TypeTextParams, TypeTextResult } from "../../../../core/contracts/action.js";
 import type { ExecutionContext } from "../../../../core/runtime/execution-context.js";
 import { WindowActivationService } from "../../../../windows/activation/window-activator.js";
 import { TextInputService } from "../../../../windows/input/text-input-service.js";
@@ -10,7 +10,7 @@ export class TypeTextHandler {
 
   constructor(private readonly context: ExecutionContext) {}
 
-  async handle(request: JsonRpcRequest<TypeTextParams>): Promise<JsonRpcResponse<null>> {
+  async handle(request: JsonRpcRequest<TypeTextParams>): Promise<JsonRpcResponse<TypeTextResult>> {
     return this.context.trace.runAction({
       actionType: this.definition.method,
       request,
@@ -27,12 +27,26 @@ export class TypeTextHandler {
         this.context.endTurn.begin(request.meta);
         const activationService = new WindowActivationService(this.context.nativeBridge);
         const textInputService = new TextInputService(activationService, this.context.nativeBridge);
-        await textInputService.typeText(params);
+        const execution = await textInputService.typeText(params);
 
         return {
           id: request.id,
           ok: true,
-          result: null
+          result: {
+            ok: true,
+            window: params.window,
+            activation: execution.activation,
+            dispatched: {
+              kind: "text",
+              inputMethod: execution.inputMethod,
+              textLength: execution.textLength,
+              utf16CodeUnits: execution.utf16CodeUnits,
+              ...(execution.inputEvents !== undefined ? { inputEvents: execution.inputEvents } : {}),
+              ...(execution.fallbackFromSendText !== undefined
+                ? { fallbackFromSendText: execution.fallbackFromSendText }
+                : {})
+            }
+          }
         };
       }
     });

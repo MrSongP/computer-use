@@ -1,5 +1,5 @@
 import type { JsonRpcRequest, JsonRpcResponse } from "../../../../core/contracts/rpc.js";
-import type { PressKeyParams } from "../../../../core/contracts/action.js";
+import type { PressKeyParams, PressKeyResult } from "../../../../core/contracts/action.js";
 import type { ExecutionContext } from "../../../../core/runtime/execution-context.js";
 import { WindowActivationService } from "../../../../windows/activation/window-activator.js";
 import { KeyboardInputService } from "../../../../windows/input/keyboard-input-service.js";
@@ -10,7 +10,7 @@ export class PressKeyHandler {
 
   constructor(private readonly context: ExecutionContext) {}
 
-  async handle(request: JsonRpcRequest<PressKeyParams>): Promise<JsonRpcResponse<null>> {
+  async handle(request: JsonRpcRequest<PressKeyParams>): Promise<JsonRpcResponse<PressKeyResult>> {
     return this.context.trace.runAction({
       actionType: this.definition.method,
       request,
@@ -30,12 +30,22 @@ export class PressKeyHandler {
           activationService,
           this.context.nativeBridge
         );
-        await keyboardInputService.pressKey(params);
+        const execution = await keyboardInputService.pressKey(params);
 
         return {
           id: request.id,
           ok: true,
-          result: null
+          result: {
+            ok: true,
+            window: params.window,
+            key: execution.key,
+            activation: execution.activation,
+            dispatched: {
+              kind: "keyboard_chord",
+              normalizedKeys: execution.normalizedKeys,
+              inputEvents: execution.inputEvents
+            }
+          }
         };
       }
     });

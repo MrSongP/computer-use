@@ -1,10 +1,11 @@
 import type { JsonRpcRequest, JsonRpcResponse } from "../../../../core/contracts/rpc.js";
-import type { SetValueParams } from "../../../../core/contracts/action.js";
+import type { SetValueParams, SetValueResult } from "../../../../core/contracts/action.js";
 import type { ExecutionContext } from "../../../../core/runtime/execution-context.js";
 import { WindowActivationService } from "../../../../windows/activation/window-activator.js";
 import { ElementInteractionService } from "../../../../windows/uia/element-interaction-service.js";
 import {
   captureTraceWindowStateSnapshot,
+  summarizeActionStateDiff,
   summarizeWindowStateDiff
 } from "../../../../core/trace/window-state-trace.js";
 import { setValueCapability, validateSetValueParams } from "./contract.js";
@@ -14,7 +15,7 @@ export class SetValueHandler {
 
   constructor(private readonly context: ExecutionContext) {}
 
-  async handle(request: JsonRpcRequest<SetValueParams>): Promise<JsonRpcResponse<null>> {
+  async handle(request: JsonRpcRequest<SetValueParams>): Promise<JsonRpcResponse<SetValueResult>> {
     return this.context.trace.runAction({
       actionType: this.definition.method,
       request,
@@ -59,7 +60,21 @@ export class SetValueHandler {
         await trace.writeJsonArtifact("uia", "set-value.json", execution);
         await trace.writeJsonArtifact("state-diff", "state-diff.json", summarizeWindowStateDiff(beforeState, afterState));
 
-        return { id: request.id, ok: true, result: null };
+        return {
+          id: request.id,
+          ok: true,
+          result: {
+            ok: true,
+            window: params.window,
+            elementIndex: execution.elementIndex,
+            dispatched: execution.patternAction,
+            activation: execution.activation,
+            valueLength: Array.from(params.value).length,
+            utf16CodeUnits: params.value.length,
+            stateDiff: summarizeActionStateDiff(beforeState, afterState, trace.isEnabled()),
+            ...(params.screenshotId ? { screenshotId: params.screenshotId } : {})
+          }
+        };
       }
     });
   }

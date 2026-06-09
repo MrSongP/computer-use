@@ -1,4 +1,5 @@
 import type { WindowStateResult } from "../contracts/capture.js";
+import type { ActionStateDiffResult } from "../contracts/action.js";
 import type { ActionTraceCapture, TraceErrorInfo } from "./tracer.js";
 
 export async function writeWindowStateTraceArtifacts(
@@ -144,6 +145,35 @@ export function summarizeWindowStateDiff(
     changedFields,
     before: summarizeWindowState(before),
     after: summarizeWindowState(after)
+  };
+}
+
+export function summarizeActionStateDiff(
+  before: WindowStateResult | null,
+  after: WindowStateResult | null,
+  traceEnabled: boolean
+): ActionStateDiffResult {
+  if (!traceEnabled) {
+    return {
+      collected: false,
+      reason: "trace_disabled"
+    };
+  }
+
+  const diff = summarizeWindowStateDiff(before, after);
+  if (!before || !after) {
+    return {
+      collected: false,
+      reason: "snapshot_unavailable",
+      changed: diff.changed,
+      changedFields: diff.changedFields
+    };
+  }
+
+  return {
+    collected: true,
+    changed: diff.changed,
+    changedFields: diff.changedFields
   };
 }
 

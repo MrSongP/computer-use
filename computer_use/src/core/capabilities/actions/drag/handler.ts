@@ -1,10 +1,11 @@
 import type { JsonRpcRequest, JsonRpcResponse } from "../../../../core/contracts/rpc.js";
-import type { DragParams } from "../../../../core/contracts/action.js";
+import type { DragParams, DragResult } from "../../../../core/contracts/action.js";
 import type { ExecutionContext } from "../../../../core/runtime/execution-context.js";
 import { WindowActivationService } from "../../../../windows/activation/window-activator.js";
 import { PointerInputService } from "../../../../windows/input/pointer-input-service.js";
 import {
   captureTraceWindowStateSnapshot,
+  summarizeActionStateDiff,
   summarizeWindowStateDiff
 } from "../../../../core/trace/window-state-trace.js";
 import { dragCapability, validateDragParams } from "./contract.js";
@@ -14,7 +15,7 @@ export class DragHandler {
 
   constructor(private readonly context: ExecutionContext) {}
 
-  async handle(request: JsonRpcRequest<DragParams>): Promise<JsonRpcResponse<null>> {
+  async handle(request: JsonRpcRequest<DragParams>): Promise<JsonRpcResponse<DragResult>> {
     return this.context.trace.runAction({
       actionType: this.definition.method,
       request,
@@ -63,7 +64,32 @@ export class DragHandler {
         await trace.writeJsonArtifact("pointer", "pointer-drag-plan.json", execution.drag);
         await trace.writeJsonArtifact("state-diff", "state-diff.json", summarizeWindowStateDiff(beforeState, afterState));
 
-        return { id: request.id, ok: true, result: null };
+        return {
+          id: request.id,
+          ok: true,
+          result: {
+            ok: true,
+            window: params.window,
+            requestedStart: { x: params.from_x, y: params.from_y },
+            requestedEnd: { x: params.to_x, y: params.to_y },
+            screenStart: {
+              x: execution.drag.fromX,
+              y: execution.drag.fromY
+            },
+            screenEnd: {
+              x: execution.drag.toX,
+              y: execution.drag.toY
+            },
+            drag: {
+              button: execution.drag.button,
+              durationMs: execution.drag.durationMs,
+              steps: execution.drag.steps
+            },
+            activation: execution.activation,
+            stateDiff: summarizeActionStateDiff(beforeState, afterState, trace.isEnabled()),
+            ...(params.screenshotId ? { screenshotId: params.screenshotId } : {})
+          }
+        };
       }
     });
   }

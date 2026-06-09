@@ -282,7 +282,17 @@ test("trace captures before/after window state snapshots for UIA mutations", asy
       }
     });
 
-    assert.deepEqual(response, { id: 16, ok: true, result: null });
+    assert.equal(response.id, 16);
+    assert.equal(response.ok, true);
+    const result = response.result as any;
+    assert.equal(result.ok, true);
+    assert.equal(result.elementIndex, 1);
+    assert.equal(result.dispatched, "ValuePattern");
+    assert.deepEqual(result.stateDiff, {
+      collected: true,
+      changed: false,
+      changedFields: []
+    });
 
     const evidence = await readSingleEvidence(traceDir, "session-uia", "turn-set-value");
     assert.equal(evidence.actionType, "set_value");

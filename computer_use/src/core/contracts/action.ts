@@ -93,14 +93,47 @@ export interface ClickResult {
   warnings?: readonly string[];
 }
 
+export interface ActionStateDiffResult {
+  collected: boolean;
+  changed?: boolean;
+  changedFields?: readonly string[];
+  reason?: "trace_disabled" | "snapshot_unavailable";
+}
+
 export interface PressKeyParams {
   window: WindowRef;
   key: string;
 }
 
+export interface PressKeyResult {
+  ok: true;
+  window: WindowRef;
+  key: string;
+  activation: ActivationPlan;
+  dispatched: {
+    kind: "keyboard_chord";
+    normalizedKeys: readonly string[];
+    inputEvents: number;
+  };
+}
+
 export interface TypeTextParams {
   window: WindowRef;
   text: string;
+}
+
+export interface TypeTextResult {
+  ok: true;
+  window: WindowRef;
+  activation: ActivationPlan;
+  dispatched: {
+    kind: "text";
+    inputMethod: "sendText" | "unicodeKeyboardInputs";
+    textLength: number;
+    utf16CodeUnits: number;
+    inputEvents?: number;
+    fallbackFromSendText?: boolean;
+  };
 }
 
 export interface ActivateWindowParams {
@@ -145,8 +178,34 @@ export interface ScrollParams {
   screenshotId?: string;
 }
 
+export interface ScrollResult {
+  ok: true;
+  window: WindowRef;
+  requestedPoint: PointerScreenPoint;
+  screenPoint: PointerScreenPoint;
+  scroll: {
+    scrollX: number;
+    scrollY: number;
+  };
+  activation: ActivationPlan;
+  stateDiff?: ActionStateDiffResult;
+  screenshotId?: string;
+}
+
 export interface SetValueParams extends ElementIndexParams {
   value: string;
+}
+
+export interface SetValueResult {
+  ok: true;
+  window: WindowRef;
+  elementIndex: number;
+  dispatched: "ValuePattern" | string;
+  activation: ActivationPlan;
+  valueLength: number;
+  utf16CodeUnits: number;
+  stateDiff?: ActionStateDiffResult;
+  screenshotId?: string;
 }
 
 export interface DragParams {
@@ -161,8 +220,36 @@ export interface DragParams {
   screenshotId?: string;
 }
 
+export interface DragResult {
+  ok: true;
+  window: WindowRef;
+  requestedStart: PointerScreenPoint;
+  requestedEnd: PointerScreenPoint;
+  screenStart: PointerScreenPoint;
+  screenEnd: PointerScreenPoint;
+  drag: {
+    button: "left" | "right" | "middle";
+    durationMs: number;
+    steps: number;
+  };
+  activation: ActivationPlan;
+  stateDiff?: ActionStateDiffResult;
+  screenshotId?: string;
+}
+
 export interface PerformSecondaryActionParams extends ElementIndexParams {
   action: "raise" | "scroll up" | "scroll left" | "scroll down" | "scroll right" | "expand" | "collapse" | string;
+}
+
+export interface PerformSecondaryActionResult {
+  ok: true;
+  window: WindowRef;
+  elementIndex: number;
+  requestedAction: string;
+  dispatched: string;
+  activation: ActivationPlan;
+  stateDiff?: ActionStateDiffResult;
+  screenshotId?: string;
 }
 
 export interface CommonDialogPathParams {
@@ -198,11 +285,11 @@ export interface ActionResultMap {
   select_file_in_dialog: CommonDialogPathResult;
   select_folder_in_dialog: CommonDialogPathResult;
   set_save_path_in_dialog: CommonDialogPathResult;
-  press_key: null;
-  type_text: null;
-  scroll: null;
-  set_value: null;
-  drag: null;
-  perform_secondary_action: null;
+  press_key: PressKeyResult;
+  type_text: TypeTextResult;
+  scroll: ScrollResult;
+  set_value: SetValueResult;
+  drag: DragResult;
+  perform_secondary_action: PerformSecondaryActionResult;
   activate_window: ActivateWindowResult;
 }

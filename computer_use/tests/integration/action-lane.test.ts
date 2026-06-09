@@ -1,7 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createScaffoldRuntime } from "../../src/index.js";
-import type { ClickResult } from "../../src/core/contracts/action.js";
+import type {
+  ClickResult,
+  DragResult,
+  PerformSecondaryActionResult,
+  PressKeyResult,
+  ScrollResult,
+  SetValueResult,
+  TypeTextResult
+} from "../../src/core/contracts/action.js";
 import type { WindowStateResult } from "../../src/core/contracts/capture.js";
 import type { MockNativeBridge } from "../../src/mocks/native-bridge.mock.js";
 
@@ -71,8 +79,28 @@ test("action lane dispatches press_key and type_text through the same runtime se
     }
   });
 
-  assert.deepEqual(pressKeyResponse, { id: 2, ok: true, result: null });
-  assert.deepEqual(typeTextResponse, { id: 3, ok: true, result: null });
+  assert.equal(pressKeyResponse.id, 2);
+  assert.equal(pressKeyResponse.ok, true);
+  const pressKeyResult = pressKeyResponse.result as PressKeyResult;
+  assert.equal(pressKeyResult.ok, true);
+  assert.equal(pressKeyResult.key, "Control_L+V");
+  assert.deepEqual(pressKeyResult.dispatched, {
+    kind: "keyboard_chord",
+    normalizedKeys: ["Control_L", "V"],
+    inputEvents: 4
+  });
+  assert.equal(pressKeyResult.activation.targetWindow.id, 101);
+  assert.equal(typeTextResponse.id, 3);
+  assert.equal(typeTextResponse.ok, true);
+  const typeTextResult = typeTextResponse.result as TypeTextResult;
+  assert.equal(typeTextResult.ok, true);
+  assert.deepEqual(typeTextResult.dispatched, {
+    kind: "text",
+    inputMethod: "sendText",
+    textLength: 5,
+    utf16CodeUnits: 5
+  });
+  assert.equal(typeTextResult.activation.targetWindow.id, 101);
   const bridge = scaffold.runtime.nativeBridge as MockNativeBridge;
   assert.deepEqual(
     bridge.getRecordedInvocations().map((entry) => entry.name),
@@ -279,10 +307,37 @@ test("action lane exposes capture and UIA capabilities through the same runtime 
   assert.equal(clickElementResult.elementIndex, 1);
   assert.equal(clickElementResult.dispatched, "InvokePattern");
   assert.equal(clickElementResult.activation.targetWindow.id, 101);
-  assert.deepEqual(setValueResponse, { id: 11, ok: true, result: null });
-  assert.deepEqual(secondaryResponse, { id: 12, ok: true, result: null });
-  assert.deepEqual(scrollResponse, { id: 13, ok: true, result: null });
-  assert.deepEqual(dragResponse, { id: 14, ok: true, result: null });
+  assert.equal(setValueResponse.ok, true);
+  const setValueResult = setValueResponse.result as SetValueResult;
+  assert.equal(setValueResult.ok, true);
+  assert.equal(setValueResult.elementIndex, 1);
+  assert.equal(setValueResult.dispatched, "ValuePattern");
+  assert.equal(setValueResult.valueLength, 5);
+  assert.equal(setValueResult.utf16CodeUnits, 5);
+  assert.deepEqual(setValueResult.stateDiff, { collected: false, reason: "trace_disabled" });
+  assert.equal(secondaryResponse.ok, true);
+  const secondaryResult = secondaryResponse.result as PerformSecondaryActionResult;
+  assert.equal(secondaryResult.ok, true);
+  assert.equal(secondaryResult.elementIndex, 1);
+  assert.equal(secondaryResult.requestedAction, "raise");
+  assert.equal(secondaryResult.dispatched, "raise");
+  assert.deepEqual(secondaryResult.stateDiff, { collected: false, reason: "trace_disabled" });
+  assert.equal(scrollResponse.ok, true);
+  const scrollResult = scrollResponse.result as ScrollResult;
+  assert.equal(scrollResult.ok, true);
+  assert.deepEqual(scrollResult.requestedPoint, { x: 100, y: 200 });
+  assert.deepEqual(scrollResult.screenPoint, { x: 100, y: 200 });
+  assert.deepEqual(scrollResult.scroll, { scrollX: 0, scrollY: -1 });
+  assert.deepEqual(scrollResult.stateDiff, { collected: false, reason: "trace_disabled" });
+  assert.equal(dragResponse.ok, true);
+  const dragResult = dragResponse.result as DragResult;
+  assert.equal(dragResult.ok, true);
+  assert.deepEqual(dragResult.requestedStart, { x: 100, y: 200 });
+  assert.deepEqual(dragResult.requestedEnd, { x: 140, y: 260 });
+  assert.deepEqual(dragResult.screenStart, { x: 100, y: 200 });
+  assert.deepEqual(dragResult.screenEnd, { x: 140, y: 260 });
+  assert.deepEqual(dragResult.drag, { button: "left", durationMs: 250, steps: 12 });
+  assert.deepEqual(dragResult.stateDiff, { collected: false, reason: "trace_disabled" });
 
   const bridge = scaffold.runtime.nativeBridge as MockNativeBridge;
   assert.deepEqual(

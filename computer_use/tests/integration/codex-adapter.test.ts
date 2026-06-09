@@ -83,14 +83,22 @@ test("codex adapter drives the helper end-to-end and writes trace artifacts by s
     };
     assert.equal(clickResult.ok, true);
     assert.deepEqual(clickResult.screenPoint, { x: 80, y: 140 });
-    assert.deepEqual(
-      await adapter.invoke("press_key", { window, key: "Return" }, { meta: turnOneMeta }),
-      null
-    );
-    assert.deepEqual(
-      await adapter.invoke("type_text", { window, text: "hello from codex" }, { meta: turnOneMeta }),
-      null
-    );
+    const pressKeyResult = await adapter.invoke("press_key", { window, key: "Return" }, { meta: turnOneMeta }) as any;
+    assert.equal(pressKeyResult.ok, true);
+    assert.equal(pressKeyResult.key, "Return");
+    assert.deepEqual(pressKeyResult.dispatched, {
+      kind: "keyboard_chord",
+      normalizedKeys: ["Return"],
+      inputEvents: 2
+    });
+    const typeTextResult = await adapter.invoke("type_text", { window, text: "hello from codex" }, { meta: turnOneMeta }) as any;
+    assert.equal(typeTextResult.ok, true);
+    assert.deepEqual(typeTextResult.dispatched, {
+      kind: "text",
+      inputMethod: "sendText",
+      textLength: 16,
+      utf16CodeUnits: 16
+    });
     await adapter.endTurn(turnOneMeta);
 
     const apps = await adapter.invoke("list_apps", {}, { meta: turnTwoMeta }) as {
@@ -120,14 +128,16 @@ test("codex adapter drives the helper end-to-end and writes trace artifacts by s
     assert.equal(clickElementResult.ok, true);
     assert.equal(clickElementResult.elementIndex, 1);
     assert.equal(clickElementResult.dispatched, "InvokePattern");
-    assert.deepEqual(
-      await adapter.invoke(
-        "set_value",
-        { window, element_index: 1, value: "codex-updated" },
-        { meta: turnTwoMeta }
-      ),
-      null
-    );
+    const setValueResult = await adapter.invoke(
+      "set_value",
+      { window, element_index: 1, value: "codex-updated" },
+      { meta: turnTwoMeta }
+    ) as any;
+    assert.equal(setValueResult.ok, true);
+    assert.equal(setValueResult.elementIndex, 1);
+    assert.equal(setValueResult.dispatched, "ValuePattern");
+    assert.equal(setValueResult.valueLength, 13);
+    assert.equal(setValueResult.utf16CodeUnits, 13);
     await adapter.endTurn(turnTwoMeta);
     await adapter.close();
 
