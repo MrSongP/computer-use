@@ -33,7 +33,10 @@ test("list_apps reports hidden process-only executables as running", async (t) =
     const response = await scaffold.dispatcher.dispatch({
       id: 101,
       method: "list_apps",
-      params: {},
+      params: {
+        id_contains: "ping.exe",
+        limit: 10
+      },
       meta: {
         host: "codex",
         codexTurnMetadata: {

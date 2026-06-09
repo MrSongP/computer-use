@@ -5,6 +5,7 @@ import { WindowActivationService } from "../../src/windows/activation/window-act
 import {
   CoordinatesOutsideVirtualScreenError,
   CoordinatesOutsideWindowError,
+  MissingScreenshotCoordinateMetadataError,
   PointerInputService,
   normalizeClickParams,
   toPointerClick,
@@ -73,6 +74,18 @@ test("toPointerClick converts screenshot coordinates through visible region and 
       button: "left",
       clickCount: 1
     }
+  );
+});
+
+test("toPointerClick rejects screenshot coordinates without snapshot metadata", () => {
+  assert.throws(
+    () => toPointerClick({
+      window: { id: 101, app: "demo.exe" },
+      coordinateSpace: "screenshot",
+      x: 10,
+      y: 20
+    }),
+    MissingScreenshotCoordinateMetadataError
   );
 });
 

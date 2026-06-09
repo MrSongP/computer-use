@@ -19,12 +19,12 @@ export class ListAppsHandler {
           return { id: request.id, ok: false, code: "interrupted", error: interruptError };
         }
 
-        validateListAppsParams(request.params);
-        trace.setInputParams({});
+        const params = validateListAppsParams(request.params);
+        trace.setInputParams(params);
 
         this.context.endTurn.begin(request.meta);
         const service = new WindowDiscoveryService(this.context.nativeBridge);
-        const apps = await service.listApps();
+        const apps = await service.listApps(params);
         await trace.writeJsonArtifact("apps", "apps.json", apps);
 
         return {

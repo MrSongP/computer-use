@@ -191,7 +191,7 @@ export class ClaudeMcpStdioServer {
         });
       }
 
-      return toolError(formatErrorMessage(error));
+      return toolError(toToolErrorPayload(error));
     }
   }
 
@@ -351,15 +351,49 @@ function toStructuredContent(
 }
 
 function toolError(error: unknown): unknown {
-  return {
+  const errorPayload = typeof error === "string" ? { error } : error;
+  const result: Record<string, unknown> = {
     content: [
       {
         type: "text",
-        text: typeof error === "string" ? error : JSON.stringify(error)
+        text: typeof errorPayload === "string" ? errorPayload : JSON.stringify(errorPayload)
       }
     ],
     isError: true
   };
+  if (isRecord(errorPayload)) {
+    result.structuredContent = errorPayload;
+  }
+  return {
+    ...result
+  };
+}
+
+function toToolErrorPayload(error: unknown): unknown {
+  if (!isRecord(error)) {
+    return formatErrorMessage(error);
+  }
+
+  const message = error.message;
+  const payload: Record<string, unknown> = {
+    error: typeof message === "string" && message.length > 0
+      ? message
+      : formatErrorMessage(error)
+  };
+  if (typeof error.code === "string") {
+    payload.code = error.code;
+  }
+  if (isRecord(error.approvalRequest)) {
+    payload.approvalRequest = error.approvalRequest;
+  }
+  if (isRecord(error.details)) {
+    payload.details = error.details;
+  }
+  if (isRecord(error.guidance)) {
+    payload.guidance = error.guidance;
+  }
+
+  return Object.keys(payload).length > 1 ? payload : payload.error;
 }
 
 function readProtocolVersion(params: unknown): string {

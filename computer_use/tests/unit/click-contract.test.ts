@@ -3,21 +3,39 @@ import assert from "node:assert/strict";
 import { validateClickParams } from "../../src/core/capabilities/actions/click/contract.js";
 
 const windowRef = { id: 101, app: "demo.exe" } as const;
+const snapshotWindowRef = {
+  ...windowRef,
+  rect: { left: 10, top: 20, right: 210, bottom: 220 },
+  visibleClickableRegion: { left: 0, top: 0, right: 200, bottom: 200 },
+  screenshotCoordinateScale: { x: 1, y: 1 }
+} as const;
 
 test("validateClickParams accepts coordinate mode", () => {
   assert.deepEqual(
     validateClickParams({
-      window: windowRef,
+      window: snapshotWindowRef,
       x: 12,
       y: 34,
       coordinateSpace: "screenshot"
     }),
     {
-      window: windowRef,
+      window: snapshotWindowRef,
       x: 12,
       y: 34,
       coordinateSpace: "screenshot"
     }
+  );
+});
+
+test("validateClickParams rejects screenshot coordinates without snapshot metadata", () => {
+  assert.throws(
+    () => validateClickParams({
+      window: windowRef,
+      x: 12,
+      y: 34,
+      coordinateSpace: "screenshot"
+    }),
+    /requires the exact state\.window/
   );
 });
 

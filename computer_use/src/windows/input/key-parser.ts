@@ -14,7 +14,33 @@ interface KeyDefinition {
 }
 
 const KEY_ALIASES = new Map<string, readonly string[]>([
-  ["exclam", ["Shift_L", "1"]]
+  ["!", ["Shift_L", "1"]],
+  ["?", ["Shift_L", "slash"]],
+  [">", ["Shift_L", "period"]],
+  ["<", ["Shift_L", "comma"]],
+  ["backspace", ["BackSpace"]],
+  ["del", ["Delete"]],
+  ["enter", ["Return"]],
+  ["esc", ["Escape"]],
+  ["exclam", ["Shift_L", "1"]],
+  ["numpad0", ["KP_0"]],
+  ["numpad1", ["KP_1"]],
+  ["numpad2", ["KP_2"]],
+  ["numpad3", ["KP_3"]],
+  ["numpad4", ["KP_4"]],
+  ["numpad5", ["KP_5"]],
+  ["numpad6", ["KP_6"]],
+  ["numpad7", ["KP_7"]],
+  ["numpad8", ["KP_8"]],
+  ["numpad9", ["KP_9"]],
+  ["numpad_add", ["KP_Add"]],
+  ["numpad_subtract", ["KP_Subtract"]],
+  ["numpad_multiply", ["KP_Multiply"]],
+  ["numpad_divide", ["KP_Divide"]],
+  ["numpad_decimal", ["KP_Decimal"]],
+  ["pageup", ["Page_Up"]],
+  ["pagedown", ["Page_Down"]],
+  ["spacebar", ["space"]]
 ]);
 
 const FORBIDDEN_KEYS = new Set([
@@ -108,7 +134,7 @@ export function parseKeyChord(input: string): ParsedChord {
       throw new Error(`Forbidden key: ${part}`);
     }
 
-    const alias = KEY_ALIASES.get(part);
+    const alias = KEY_ALIASES.get(normalizeAliasKey(part));
     if (alias) {
       return alias.map(resolveKeyDefinition);
     }
@@ -117,6 +143,10 @@ export function parseKeyChord(input: string): ParsedChord {
   });
 
   return { keys };
+}
+
+function normalizeAliasKey(part: string): string {
+  return part.replace(/\s+/g, "").toLowerCase();
 }
 
 function resolveKeyDefinition(part: string): ParsedKey {

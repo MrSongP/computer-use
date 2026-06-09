@@ -241,6 +241,47 @@ const runtimeInfoSchema: ToolInputSchema = {
   additionalProperties: false
 };
 
+const listAppsDiagnosticsSchema: ToolInputSchema = {
+  type: "object",
+  description: "Counts and filter metadata explaining whether list_apps was narrowed or truncated before returning to the model.",
+  properties: {
+    totalApps: {
+      type: "integer",
+      minimum: 0,
+      description: "Apps observed before filtering."
+    },
+    filteredApps: {
+      type: "integer",
+      minimum: 0,
+      description: "Apps remaining after filters and before limit."
+    },
+    returnedApps: {
+      type: "integer",
+      minimum: 0,
+      description: "Apps included in this response."
+    },
+    truncated: {
+      type: "boolean",
+      description: "True when more filtered apps matched than were returned because of limit."
+    },
+    appliedFilters: {
+      type: "object",
+      description: "Normalized list_apps filters applied by the local runtime.",
+      properties: {
+        name_contains: { type: "string" },
+        id_contains: { type: "string" },
+        id_includes: { type: "string" },
+        running_only: { type: "boolean" },
+        has_windows: { type: "boolean" },
+        limit: { type: "integer", minimum: 1 }
+      },
+      additionalProperties: false
+    }
+  },
+  required: ["totalApps", "filteredApps", "returnedApps", "truncated"],
+  additionalProperties: false
+};
+
 const tracePathsSchema: ToolInputSchema = {
   type: "object",
   description: "Absolute local trace artifact paths returned when trace is enabled.",
@@ -446,6 +487,7 @@ export function getClaudeToolOutputSchema(
             items: appDescriptorSchema,
             description: "Launchable apps and attached targetable windows."
           },
+          diagnostics: listAppsDiagnosticsSchema,
           runtime: runtimeInfoSchema
         },
         required: ["apps"],
@@ -642,6 +684,35 @@ export function getClaudeToolOutputSchema(
         additionalProperties: false
       };
 
+    case "click_element":
+      return {
+        type: "object",
+        description: "Structured click_element result with the dispatched UIA pattern and activation evidence.",
+        properties: {
+          ok: {
+            type: "boolean",
+            description: "True when the element action was dispatched without an error."
+          },
+          window: windowRefSchema,
+          elementIndex: {
+            type: "integer",
+            minimum: 0,
+            description: "Element index that was invoked."
+          },
+          dispatched: {
+            type: "string",
+            description: "Primary UIA pattern dispatched by the runtime, usually InvokePattern."
+          },
+          activation: activationPlanSchema,
+          screenshotId: {
+            type: "string",
+            description: "Optional screenshot correlation id supplied by the caller."
+          }
+        },
+        required: ["ok", "window", "elementIndex", "dispatched", "activation"],
+        additionalProperties: false
+      };
+
     case "get_window_state":
       return {
         type: "object",
@@ -706,6 +777,28 @@ export function getClaudeToolOutputSchema(
                 type: "array",
                 items: { type: "string" }
               },
+              recommendedFallbacks: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    reason: { type: "string" },
+                    action: {
+                      type: "string",
+                      enum: [
+                        "use_coordinates",
+                        "retry_with_smaller_filters",
+                        "wait_and_retry",
+                        "activate_first",
+                        "stop_input"
+                      ]
+                    },
+                    note: { type: "string" }
+                  },
+                  required: ["reason", "action", "note"],
+                  additionalProperties: false
+                }
+              },
               screenshotDegradedReason: { type: "string" },
               lastReturnedIndex: { type: "integer" }
             },
@@ -726,7 +819,40 @@ export function getClaudeToolOutputSchema(
 function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInputSchema {
   switch (method) {
     case "list_apps":
-      return emptyObjectSchema("List launchable apps and include any currently targetable windows.");
+      return {
+        type: "object",
+        description: "List launchable apps and include any currently targetable windows. Use filters for model-friendly discovery instead of pulling the full process set.",
+        properties: {
+          name_contains: {
+            type: "string",
+            description: "Case-insensitive substring matched across display names, ids, executable paths, process names, aliases, taskbar labels, and window titles."
+          },
+          id_contains: {
+            type: "string",
+            description: "Case-insensitive substring matched across ids, executable paths, aliases, and window app ids."
+          },
+          id_includes: {
+            type: "string",
+            description: "Alias for id_contains."
+          },
+          running_only: {
+            type: "boolean",
+            description: "Only return apps currently observed as running."
+          },
+          has_windows: {
+            type: "boolean",
+            description: "Only return apps that currently expose at least one targetable window."
+          },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 500,
+            default: 60,
+            description: "Maximum returned apps. Defaults to a bounded model-friendly page."
+          }
+        },
+        additionalProperties: false
+      };
 
     case "list_windows":
       return emptyObjectSchema("List targetable top-level windows.");

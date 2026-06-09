@@ -64,6 +64,7 @@ export class PointerInputService {
 
   async click(params: ClickParams): Promise<PointerClickExecution> {
     const normalizedParams = normalizeClickParams(params);
+    assertScreenshotCoordinateMetadata(normalizedParams);
     const activation = await this.activationService.activateWithReport(normalizedParams.window);
     const pointerClick = toPointerClick(normalizedParams);
     const virtualScreen = await this.resolveVirtualScreen();
@@ -140,6 +141,7 @@ export function normalizeClickParams(params: ClickParams): ClickParams {
 }
 
 export function toPointerClick(params: ClickParams): PointerClick {
+  assertScreenshotCoordinateMetadata(params);
   const { x, y } = resolveWindowPoint(params);
   if (typeof x !== "number" || !Number.isFinite(x) || typeof y !== "number" || !Number.isFinite(y)) {
     throw new Error("Pointer click requires finite coordinates");
@@ -154,6 +156,46 @@ export function toPointerClick(params: ClickParams): PointerClick {
     button: normalizeMouseButton(params.mouse_button),
     clickCount: normalizeClickCount(params.click_count)
   };
+}
+
+function assertScreenshotCoordinateMetadata(params: ClickParams): void {
+  if (params.coordinateSpace !== "screenshot") {
+    return;
+  }
+
+  const missing: string[] = [];
+  if (!isFiniteRect(params.window.rect)) {
+    missing.push("window.rect");
+  }
+  if (!isFiniteRect(params.window.visibleClickableRegion)) {
+    missing.push("window.visibleClickableRegion");
+  }
+  if (
+    typeof params.window.screenshotCoordinateScale?.x !== "number" ||
+    !Number.isFinite(params.window.screenshotCoordinateScale.x) ||
+    params.window.screenshotCoordinateScale.x <= 0 ||
+    typeof params.window.screenshotCoordinateScale.y !== "number" ||
+    !Number.isFinite(params.window.screenshotCoordinateScale.y) ||
+    params.window.screenshotCoordinateScale.y <= 0
+  ) {
+    missing.push("window.screenshotCoordinateScale");
+  }
+
+  if (missing.length > 0) {
+    throw new MissingScreenshotCoordinateMetadataError(params, missing);
+  }
+}
+
+function isFiniteRect(rect: WindowRef["rect"]): boolean {
+  return Boolean(
+    rect &&
+      Number.isFinite(rect.left) &&
+      Number.isFinite(rect.top) &&
+      Number.isFinite(rect.right) &&
+      Number.isFinite(rect.bottom) &&
+      rect.right > rect.left &&
+      rect.bottom > rect.top
+  );
 }
 
 export function toPointerScroll(params: ScrollParams): PointerScroll {
@@ -344,6 +386,40 @@ export class VirtualScreenMetricsUnavailableError extends Error {
     this.name = "VirtualScreenMetricsUnavailableError";
     this.details = {
       cause: message
+    };
+  }
+}
+
+export class MissingScreenshotCoordinateMetadataError extends Error {
+  readonly code = "missing_screenshot_coordinate_metadata";
+  readonly details: Record<string, unknown>;
+  readonly guidance: Record<string, unknown>;
+
+  constructor(params: ClickParams, missingWindowFields: readonly string[]) {
+    super(
+      "click coordinateSpace=screenshot requires the exact state.window returned by get_window_state, " +
+        `including ${missingWindowFields.join(", ")}.`
+    );
+    this.name = "MissingScreenshotCoordinateMetadataError";
+    this.details = {
+      missingWindowFields,
+      windowId: params.window.id,
+      app: params.window.app
+    };
+    this.guidance = {
+      should_retry: true,
+      model_action: "Call get_window_state for the target window, then retry click with coordinateSpace=screenshot using the returned state.window object.",
+      suggested_tool_call: {
+        method: "get_window_state",
+        params: {
+          window: {
+            id: params.window.id,
+            app: params.window.app
+          },
+          include_screenshot: true,
+          include_text: false
+        }
+      }
     };
   }
 }

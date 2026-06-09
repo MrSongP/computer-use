@@ -32,6 +32,12 @@ test("parseKeyChord expands exclam to shifted number row input", () => {
   });
 });
 
+test("parseKeyChord accepts Windows-friendly aliases", () => {
+  assert.deepEqual(normalizeKeyChord("Ctrl+Numpad0"), ["Ctrl", "KP_0"]);
+  assert.deepEqual(normalizeKeyChord("Enter"), ["Return"]);
+  assert.deepEqual(normalizeKeyChord("?"), ["Shift_L", "slash"]);
+});
+
 test("parseKeyChord rejects forbidden Windows keys", () => {
   assert.throws(() => parseKeyChord("Meta_L+V"), /Forbidden key/);
 });

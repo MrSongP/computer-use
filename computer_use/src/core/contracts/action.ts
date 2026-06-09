@@ -127,6 +127,15 @@ export interface ClickElementParams extends ElementIndexParams {
   mouse_button?: "left" | "right" | "middle" | "l" | "r" | "m";
 }
 
+export interface ClickElementResult {
+  ok: true;
+  window: WindowRef;
+  elementIndex: number;
+  dispatched: "InvokePattern" | string;
+  activation: ActivationPlan;
+  screenshotId?: string;
+}
+
 export interface ScrollParams {
   window: WindowRef;
   x: number;
@@ -181,4 +190,19 @@ export interface ActionRequestMap {
   drag: DragParams;
   perform_secondary_action: PerformSecondaryActionParams;
   activate_window: ActivateWindowParams;
+}
+
+export interface ActionResultMap {
+  click: ClickResult;
+  click_element: ClickElementResult;
+  select_file_in_dialog: CommonDialogPathResult;
+  select_folder_in_dialog: CommonDialogPathResult;
+  set_save_path_in_dialog: CommonDialogPathResult;
+  press_key: null;
+  type_text: null;
+  scroll: null;
+  set_value: null;
+  drag: null;
+  perform_secondary_action: null;
+  activate_window: ActivateWindowResult;
 }

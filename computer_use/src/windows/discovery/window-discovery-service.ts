@@ -1,6 +1,8 @@
 import type { AppDescriptor } from "../../core/contracts/app.js";
-import type { GetWindowParams, ListAppsResult } from "../../core/contracts/discovery.js";
+import type { GetWindowParams, ListAppsParams, ListAppsResult } from "../../core/contracts/discovery.js";
 import type { WindowRef } from "../../core/contracts/window.js";
+
+const TASKBAR_APP_ID = "windows.shell.taskbar";
 
 export interface WindowDiscoveryPort {
   listWindows(): Promise<readonly WindowRef[]>;
@@ -21,13 +23,118 @@ export class WindowDiscoveryService {
     return validateWindowRef(await this.port.getWindow(params));
   }
 
-  async listApps(): Promise<ListAppsResult> {
-    const apps = normalizeAppsPayload(await this.port.listApps());
+  async listApps(params: ListAppsParams = {}): Promise<ListAppsResult> {
+    const apps = normalizeAppsPayload(await this.port.listApps()).map(validateAppDescriptor);
+    const filtered = filterApps(apps, params);
+    const ranked = rankApps(filtered);
+    const limit = params.limit ?? ranked.length;
+    const returned = ranked.slice(0, limit);
     return {
-      apps: apps.map(validateAppDescriptor),
+      apps: returned,
+      diagnostics: {
+        totalApps: apps.length,
+        filteredApps: filtered.length,
+        returnedApps: returned.length,
+        truncated: filtered.length > returned.length,
+        appliedFilters: buildAppliedFilters(params, limit)
+      },
       runtime: buildRuntimeInfo(this.port)
     };
   }
+}
+
+function filterApps(
+  apps: readonly AppDescriptor[],
+  params: ListAppsParams
+): readonly AppDescriptor[] {
+  return apps.filter((app) => {
+    if (params.running_only === true && app.isRunning !== true) {
+      return false;
+    }
+    if (params.has_windows === true && app.windows.length === 0) {
+      return false;
+    }
+    if (params.name_contains && !matchesAny(appNameHaystack(app), params.name_contains)) {
+      return false;
+    }
+    const idNeedle = params.id_contains ?? params.id_includes;
+    if (idNeedle && !matchesAny(appIdentityHaystack(app), idNeedle)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function rankApps(apps: readonly AppDescriptor[]): readonly AppDescriptor[] {
+  return [...apps].sort((left, right) => {
+    const rankDelta = appRank(left) - appRank(right);
+    if (rankDelta !== 0) {
+      return rankDelta;
+    }
+    return appSortLabel(left).localeCompare(appSortLabel(right), undefined, { sensitivity: "base" });
+  });
+}
+
+function appRank(app: AppDescriptor): number {
+  if (app.windows.length > 0 && app.id !== TASKBAR_APP_ID) {
+    return 0;
+  }
+  if (app.id === TASKBAR_APP_ID) {
+    return 1;
+  }
+  if (app.displayName || app.useCount !== undefined || app.lastUsedDate || app.activationModel === "app_user_model_id") {
+    return 2;
+  }
+  if (app.isRunning) {
+    return 3;
+  }
+  return 4;
+}
+
+function appSortLabel(app: AppDescriptor): string {
+  return app.displayName ?? app.taskbarLabel ?? app.processNames?.[0] ?? app.id;
+}
+
+function matchesAny(values: readonly string[], needle: string): boolean {
+  const normalizedNeedle = needle.toLowerCase();
+  return values.some((value) => value.toLowerCase().includes(normalizedNeedle));
+}
+
+function appNameHaystack(app: AppDescriptor): readonly string[] {
+  return [
+    ...appIdentityHaystack(app),
+    app.displayName,
+    app.taskbarLabel,
+    ...(app.processNames ?? []),
+    ...app.windows.map((window) => window.title)
+  ].filter(isNonEmptyString);
+}
+
+function appIdentityHaystack(app: AppDescriptor): readonly string[] {
+  return [
+    app.id,
+    app.executablePath,
+    ...(app.aliases ?? []),
+    ...app.windows.map((window) => window.app)
+  ].filter(isNonEmptyString);
+}
+
+function isNonEmptyString(value: string | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function buildAppliedFilters(
+  params: ListAppsParams,
+  limit: number
+): NonNullable<ListAppsResult["diagnostics"]>["appliedFilters"] {
+  return {
+    ...(params.name_contains ? { name_contains: params.name_contains } : {}),
+    ...(params.id_contains ? { id_contains: params.id_contains } : {}),
+    ...(params.id_includes ? { id_includes: params.id_includes } : {}),
+    ...(params.running_only !== undefined ? { running_only: params.running_only } : {}),
+    ...(params.has_windows !== undefined ? { has_windows: params.has_windows } : {}),
+    limit
+  };
 }
 
 function normalizeAppsPayload(

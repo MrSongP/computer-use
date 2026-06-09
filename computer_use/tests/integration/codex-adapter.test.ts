@@ -95,9 +95,11 @@ test("codex adapter drives the helper end-to-end and writes trace artifacts by s
 
     const apps = await adapter.invoke("list_apps", {}, { meta: turnTwoMeta }) as {
       apps: Array<{ id: string; displayName?: string }>;
+      diagnostics: { truncated: boolean };
       runtime: { schemaVersion: string; driverName?: string };
     };
     assert.equal(apps.apps[0]?.id, "demo.exe");
+    assert.equal(apps.diagnostics.truncated, false);
     assert.equal(apps.runtime.schemaVersion, "computer-use/list-apps/v1");
     assert.equal(apps.runtime.driverName, "mock");
 
@@ -110,14 +112,14 @@ test("codex adapter drives the helper end-to-end and writes trace artifacts by s
     assert.deepEqual(launchResult.observedWindows, [
       { id: 101, app: "demo.exe", title: "Demo Window" }
     ]);
-    assert.deepEqual(
-      await adapter.invoke(
-        "click_element",
-        { window, element_index: 1 },
-        { meta: turnTwoMeta }
-      ),
-      null
-    );
+    const clickElementResult = await adapter.invoke(
+      "click_element",
+      { window, element_index: 1 },
+      { meta: turnTwoMeta }
+    ) as any;
+    assert.equal(clickElementResult.ok, true);
+    assert.equal(clickElementResult.elementIndex, 1);
+    assert.equal(clickElementResult.dispatched, "InvokePattern");
     assert.deepEqual(
       await adapter.invoke(
         "set_value",

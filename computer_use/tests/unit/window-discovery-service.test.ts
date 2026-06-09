@@ -46,6 +46,15 @@ test("WindowDiscoveryService normalizes windows and apps from the bridge", async
         windows: [{ id: 42, app: "C:\\Windows\\notepad.exe", title: "Notes" }]
       }
     ],
+    diagnostics: {
+      totalApps: 1,
+      filteredApps: 1,
+      returnedApps: 1,
+      truncated: false,
+      appliedFilters: {
+        limit: 1
+      }
+    },
     runtime: {
       schemaVersion: "computer-use/list-apps/v1"
     }
@@ -85,6 +94,15 @@ test("WindowDiscoveryService accepts wrapped apps payloads from the native-host 
         windows: [{ id: 42, app: "C:\\Windows\\notepad.exe", title: "Notes" }]
       }
     ],
+    diagnostics: {
+      totalApps: 1,
+      filteredApps: 1,
+      returnedApps: 1,
+      truncated: false,
+      appliedFilters: {
+        limit: 1
+      }
+    },
     runtime: {
       schemaVersion: "computer-use/list-apps/v1"
     }
@@ -139,6 +157,15 @@ test("WindowDiscoveryService preserves app identity hints and runtime capabiliti
         windows: []
       }
     ],
+    diagnostics: {
+      totalApps: 1,
+      filteredApps: 1,
+      returnedApps: 1,
+      truncated: false,
+      appliedFilters: {
+        limit: 1
+      }
+    },
     runtime: {
       schemaVersion: "computer-use/list-apps/v1",
       driverName: "native-host",
@@ -147,6 +174,63 @@ test("WindowDiscoveryService preserves app identity hints and runtime capabiliti
           transport: "embedded"
         }
       }
+    }
+  });
+});
+
+test("WindowDiscoveryService filters and limits list_apps results for model-friendly discovery", async () => {
+  const service = new WindowDiscoveryService({
+    async listWindows() {
+      return [];
+    },
+    async getWindow() {
+      return { id: 42, app: "demo.exe" };
+    },
+    async listApps() {
+      return [
+        {
+          id: "C:\\Windows\\System32\\svchost.exe",
+          executablePath: "C:\\Windows\\System32\\svchost.exe",
+          processNames: ["svchost.exe"],
+          isRunning: true,
+          windows: []
+        },
+        {
+          id: "QQ",
+          displayName: "QQ",
+          executablePath: "D:\\Tencent\\QQNT\\QQ.exe",
+          processNames: ["QQ.exe"],
+          isRunning: true,
+          windows: [{ id: 9, app: "QQ", title: "QQ" }]
+        },
+        {
+          id: "Notepad",
+          displayName: "Notepad",
+          isRunning: false,
+          windows: []
+        }
+      ];
+    }
+  });
+
+  const result = await service.listApps({
+    name_contains: "qq",
+    running_only: true,
+    has_windows: true,
+    limit: 10
+  });
+
+  assert.deepEqual(result.apps.map((app) => app.id), ["QQ"]);
+  assert.deepEqual(result.diagnostics, {
+    totalApps: 3,
+    filteredApps: 1,
+    returnedApps: 1,
+    truncated: false,
+    appliedFilters: {
+      name_contains: "qq",
+      running_only: true,
+      has_windows: true,
+      limit: 10
     }
   });
 });

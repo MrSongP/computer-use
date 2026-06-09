@@ -169,6 +169,15 @@ test("action lane exposes discovery and launch capabilities through the same run
       windows: [{ id: 501, app: "windows.shell.taskbar", title: "Windows Taskbar" }]
     }
   ]);
+  assert.deepEqual(listAppsResult.diagnostics, {
+    totalApps: 2,
+    filteredApps: 2,
+    returnedApps: 2,
+    truncated: false,
+    appliedFilters: {
+      limit: 60
+    }
+  });
   assert.equal(listAppsResult.runtime.schemaVersion, "computer-use/list-apps/v1");
   assert.equal(listAppsResult.runtime.driverName, "mock");
   assert.equal(launchAppResponse.ok, true);
@@ -263,7 +272,13 @@ test("action lane exposes capture and UIA capabilities through the same runtime 
   assert.equal(windowState.screenshot?.mime, "image/jpeg");
   assert.equal(windowState.screenshot?.raw, undefined);
   assert.equal(windowState.text?.index, 0);
-  assert.deepEqual(clickElementResponse, { id: 10, ok: true, result: null });
+  assert.equal(clickElementResponse.id, 10);
+  assert.equal(clickElementResponse.ok, true);
+  const clickElementResult = clickElementResponse.result as any;
+  assert.equal(clickElementResult.ok, true);
+  assert.equal(clickElementResult.elementIndex, 1);
+  assert.equal(clickElementResult.dispatched, "InvokePattern");
+  assert.equal(clickElementResult.activation.targetWindow.id, 101);
   assert.deepEqual(setValueResponse, { id: 11, ok: true, result: null });
   assert.deepEqual(secondaryResponse, { id: 12, ok: true, result: null });
   assert.deepEqual(scrollResponse, { id: 13, ok: true, result: null });

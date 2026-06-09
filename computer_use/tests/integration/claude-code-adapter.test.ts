@@ -175,6 +175,9 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.equal(listWindowsTool.outputSchema.type, "object");
     assert.deepEqual(listWindowsTool.outputSchema.required, ["windows"]);
     const listAppsTool = tools.result.tools.find((tool: { name: string }) => tool.name === "list_apps");
+    assert.equal(listAppsTool.inputSchema.properties.name_contains.type, "string");
+    assert.equal(listAppsTool.inputSchema.properties.limit.default, 60);
+    assert.equal(listAppsTool.outputSchema.properties.diagnostics.properties.truncated.type, "boolean");
     assert.equal(listAppsTool.outputSchema.properties.runtime.properties.schemaVersion.enum[0], "computer-use/list-apps/v1");
     assert.equal(listAppsTool.outputSchema.properties.apps.items.properties.aliases.items.type, "string");
     assert.equal(listAppsTool.outputSchema.properties.apps.items.properties.processIds.items.type, "integer");
@@ -185,6 +188,8 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     const launchAppTool = tools.result.tools.find((tool: { name: string }) => tool.name === "launch_app");
     assert.deepEqual(launchAppTool.outputSchema.properties.disposition.enum, ["delegated_launch", "observed_window"]);
     assert.equal(launchAppTool.outputSchema.properties.observedWindows.items.required.includes("app"), true);
+    const clickElementTool = tools.result.tools.find((tool: { name: string }) => tool.name === "click_element");
+    assert.equal(clickElementTool.outputSchema.properties.dispatched.type, "string");
     const clickTool = tools.result.tools.find((tool: { name: string }) => tool.name === "click");
     assert.equal(clickTool.inputSchema.required.includes("window"), true);
     assert.equal(clickTool.inputSchema.properties.window.required.includes("id"), true);
@@ -214,6 +219,56 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
 
     const endTurn = JSON.parse(endTurnLine!);
     assert.deepEqual(JSON.parse(endTurn.result.content[0].text), null);
+  } finally {
+    await instance.server.close();
+  }
+});
+
+test("claude code MCP server returns structuredContent for tool errors", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const instance = createClaudeMcpServer({
+    useMockBridge: true,
+    input,
+    output
+  }).start();
+
+  try {
+    const responses = collectOutputLines(output, 2);
+    input.write(`${JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {}
+    })}\n`);
+    input.write(`${JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "click",
+        arguments: {
+          window: {
+            id: 101,
+            app: "demo.exe"
+          },
+          x: 10,
+          y: 20,
+          coordinateSpace: "screenshot"
+        }
+      }
+    })}\n`);
+
+    const [, errorLine] = await responses;
+    const errorResponse = JSON.parse(errorLine!);
+    assert.equal(errorResponse.result.isError, true);
+    assert.equal(errorResponse.result.structuredContent.code, "missing_screenshot_coordinate_metadata");
+    assert.deepEqual(errorResponse.result.structuredContent.details.missingWindowFields, [
+      "window.rect",
+      "window.visibleClickableRegion",
+      "window.screenshotCoordinateScale"
+    ]);
+    assert.equal(errorResponse.result.structuredContent.guidance.should_retry, true);
   } finally {
     await instance.server.close();
   }

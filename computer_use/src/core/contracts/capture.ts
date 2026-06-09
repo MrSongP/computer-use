@@ -88,6 +88,7 @@ export interface WindowStateResult {
     truncated?: boolean;
     partial?: boolean;
     degradedReasons?: readonly string[];
+    recommendedFallbacks?: readonly CaptureRecommendedFallback[];
     screenshotDegradedReason?: string;
     lastReturnedIndex?: number;
   };
@@ -96,6 +97,17 @@ export interface WindowStateResult {
     rawScreenshotPath?: string;
     responsePath?: string;
   };
+}
+
+export interface CaptureRecommendedFallback {
+  reason: string;
+  action:
+    | "use_coordinates"
+    | "retry_with_smaller_filters"
+    | "wait_and_retry"
+    | "activate_first"
+    | "stop_input";
+  note: string;
 }
 
 export interface CaptureRequestMap {

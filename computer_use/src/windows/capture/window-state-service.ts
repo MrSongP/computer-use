@@ -11,7 +11,9 @@ export class WindowStateService {
       include_screenshot: params.include_screenshot ?? true,
       include_text: params.include_text ?? true
     });
-    return enrichWindowStateCoordinateMetadata(state, await this.tryGetVirtualScreenMetrics());
+    return enrichWindowStateCaptureGuidance(
+      enrichWindowStateCoordinateMetadata(state, await this.tryGetVirtualScreenMetrics())
+    );
   }
 
   private async tryGetVirtualScreenMetrics(): Promise<VirtualScreenMetrics | null> {
@@ -20,6 +22,68 @@ export class WindowStateService {
     } catch {
       return null;
     }
+  }
+}
+
+export function enrichWindowStateCaptureGuidance(state: WindowStateResult): WindowStateResult {
+  const recommendedFallbacks = (state.capture.degradedReasons ?? [])
+    .map(toRecommendedFallback)
+    .filter((entry): entry is NonNullable<ReturnType<typeof toRecommendedFallback>> => entry !== undefined);
+  if (recommendedFallbacks.length === 0) {
+    return state;
+  }
+
+  return {
+    ...state,
+    capture: {
+      ...state.capture,
+      recommendedFallbacks
+    }
+  };
+}
+
+function toRecommendedFallback(reason: string):
+  | NonNullable<WindowStateResult["capture"]["recommendedFallbacks"]>[number]
+  | undefined {
+  switch (reason) {
+    case "uia_blocked_chromium_im":
+      return {
+        reason,
+        action: "use_coordinates",
+        note: "Avoid UIA traversal in Chromium Embedded IM content; use screenshot-backed coordinate targeting after verifying the destination."
+      };
+    case "uia_timeout":
+      return {
+        reason,
+        action: "wait_and_retry",
+        note: "Accessibility timed out; wait briefly, retry with include_text=false or narrower filters, and avoid stale element indexes."
+      };
+    case "uia_empty":
+      return {
+        reason,
+        action: "use_coordinates",
+        note: "No useful accessibility nodes were returned; use the screenshot and window-relative coordinates."
+      };
+    case "uia_truncated":
+      return {
+        reason,
+        action: "retry_with_smaller_filters",
+        note: "The accessibility tree was truncated; retry with max_elements, role_filter, or name_contains."
+      };
+    case "wgc_failed":
+      return {
+        reason,
+        action: "activate_first",
+        note: "WGC screenshot capture failed and fell back; activate or restore the window, then recapture if visual precision matters."
+      };
+    case "app_hung":
+      return {
+        reason,
+        action: "stop_input",
+        note: "The target window is not responding; stop sending input until the app recovers or the user intervenes."
+      };
+    default:
+      return undefined;
   }
 }
 

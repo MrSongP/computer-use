@@ -59,7 +59,21 @@ export function enforceLaunchAppPolicy(context: LaunchAppPolicyContext): void {
       taskbarLabelHint: taskbarLabel,
       detectedState: matchedApp.windows.length > 0 ? "running_with_visible_window" : "running_without_visible_window",
       existingWindowIds: matchedApp.windows.map((window) => window.id),
-      taskbarAppId: TASKBAR_APP_ID
+      taskbarAppId: TASKBAR_APP_ID,
+      followUpActions: [
+        {
+          action: "restoreFromTaskbar",
+          taskbarAppId: TASKBAR_APP_ID,
+          ...(taskbarLabel ? { taskbarLabel } : {}),
+          app: matchedApp.id,
+          ...(matchedExecutablePath ? { executablePath: matchedExecutablePath } : {})
+        },
+        {
+          action: "pollListApps",
+          timeoutMs: 1500,
+          intervalMs: 100
+        }
+      ]
     },
     guidance: {
       should_retry: true,

@@ -14,6 +14,9 @@ export type CommonDialogHelper =
   | "select_folder_in_dialog"
   | "set_save_path_in_dialog";
 
+const DIALOG_CLOSE_TIMEOUT_MS = 800;
+const DIALOG_CLOSE_POLL_INTERVAL_MS = 50;
+
 export class CommonDialogService {
   constructor(private readonly bridge: NativeBridge) {}
 
@@ -54,13 +57,25 @@ export class CommonDialogService {
   }
 
   private async didDialogClose(id: number): Promise<boolean | null> {
-    try {
-      await this.bridge.getWindow({ id });
-      return false;
-    } catch {
-      return true;
-    }
+    const deadline = Date.now() + DIALOG_CLOSE_TIMEOUT_MS;
+    let observedOpen = false;
+
+    do {
+      try {
+        await this.bridge.getWindow({ id });
+        observedOpen = true;
+      } catch {
+        return true;
+      }
+      await sleep(DIALOG_CLOSE_POLL_INTERVAL_MS);
+    } while (Date.now() < deadline);
+
+    return observedOpen ? false : null;
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function assertExistingPath(value: string, expected: "file" | "directory"): Promise<void> {

@@ -145,3 +145,44 @@ test("window state service annotates screenshot coordinate mapping and visible r
     screenY: 20
   });
 });
+
+test("window state service attaches recommended fallbacks for degraded capture reasons", async () => {
+  const bridge = {
+    async getVirtualScreenMetrics() {
+      return {
+        originX: 0,
+        originY: 0,
+        width: 1920,
+        height: 1080,
+        source: "native" as const
+      };
+    },
+    async getWindowState(params: WindowStateParams): Promise<WindowStateResult> {
+      return {
+        window: {
+          ...params.window,
+          rect: { left: 1, top: 2, right: 3, bottom: 4 },
+          visible: true,
+          minimized: false,
+          focused: true
+        },
+        capture: {
+          screenshotRequested: false,
+          textRequested: true,
+          degradedReasons: ["uia_truncated", "uia_blocked_chromium_im"]
+        }
+      };
+    }
+  } as NativeBridge;
+
+  const service = new WindowStateService(bridge);
+  const state = await service.getWindowState({
+    window: { id: 101, app: "demo.exe" },
+    include_screenshot: false
+  });
+
+  assert.deepEqual(
+    state.capture.recommendedFallbacks?.map((fallback) => fallback.action),
+    ["retry_with_smaller_filters", "use_coordinates"]
+  );
+});
