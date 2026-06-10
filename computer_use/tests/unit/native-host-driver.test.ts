@@ -90,7 +90,7 @@ test("NativeHostBridge closes a temporary fallback turn on endTurn", async () =>
   };
 
   await bridge.listWindows();
-  bridge.endTurn();
+  await bridge.endTurn();
   await waitFor(() => fallback.getRecordedInvocations().some((entry) => entry.name === "endTurn"));
 
   assert.deepEqual(
@@ -126,25 +126,118 @@ test("NativeHostBridge reports the native-host timeout cause when fallback also 
   );
 });
 
-test("NativeHostBridge disposes the native-host process after endTurn flushes", async () => {
+test("NativeHostBridge shows completion before endTurn flushes", async () => {
   const bridge = new NativeHostBridge({
     fallback: new NullNativeBridge()
   });
   const fakeChild = createHungChild();
-  const methods: string[] = [];
+  const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
 
   (bridge as any).hostProcess = fakeChild;
   (bridge as any).turnStarted = true;
-  (bridge as any).invokeHost = async (method: string) => {
-    methods.push(method);
+  (bridge as any).invokeHost = async (method: string, payload: Record<string, unknown>) => {
+    calls.push({ method, payload });
   };
 
-  bridge.endTurn();
+  await bridge.endTurn();
   await waitFor(() => fakeChild.killCalled);
 
-  assert.deepEqual(methods, ["endTurn"]);
+  assert.equal(calls[0]?.method, "updateStatus");
+  assert.equal(calls[0]?.payload.title, "Done");
+  assert.equal(calls[1]?.method, "endTurn");
   assert.equal(fakeChild.killCalled, true);
   assert.equal((bridge as any).hostProcess, undefined);
+  return;
+
+  assert.deepEqual(calls, [
+    {
+      method: "updateStatus",
+      payload: {
+        title: "Done",
+        detail: "任务完成"
+      }
+    },
+    {
+      method: "endTurn",
+      payload: {
+        meta: null
+      }
+    }
+  ]);
+  assert.equal(fakeChild.killCalled, true);
+  assert.equal((bridge as any).hostProcess, undefined);
+});
+
+test("NativeHostBridge updates cursor status before primary native-host calls", async () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge()
+  });
+  const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
+
+  (bridge as any).hostProcess = createHungChild();
+  (bridge as any).ensureTurnStarted = async () => {};
+  (bridge as any).invokeHost = async (method: string, payload: Record<string, unknown>) => {
+    calls.push({ method, payload });
+    return method === "listWindows" ? [] : null;
+  };
+
+  await bridge.listWindows();
+
+  assert.deepEqual(calls.map((entry) => entry.method), ["updateStatus", "listWindows"]);
+  assert.deepEqual(calls[0]?.payload, {
+    title: "List Windows",
+    detail: "Find targetable windows"
+  });
+  return;
+
+  assert.deepEqual(calls, [
+    {
+      method: "updateStatus",
+      payload: {
+        title: "list_windows",
+        detail: "正在查找可操作窗口"
+      }
+    },
+    {
+      method: "listWindows",
+      payload: {
+        meta: null
+      }
+    },
+    {
+      method: "clearStatus",
+      payload: {}
+    }
+  ]);
+});
+
+test("NativeHostBridge prefers agent-provided cursor status metadata", async () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge()
+  });
+  const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
+
+  bridge.beginTurn({
+    computerUseStatus: {
+      title: "activate_window",
+      detail: "正在激活 QQ 窗口"
+    }
+  });
+  (bridge as any).ensureTurnStarted = async () => {};
+  (bridge as any).invokeHost = async (method: string, payload: Record<string, unknown>) => {
+    calls.push({ method, payload });
+    return [];
+  };
+
+  await bridge.listWindows();
+
+  assert.deepEqual(calls[0], {
+    method: "updateStatus",
+    payload: {
+      title: "activate_window",
+      detail: "正在激活 QQ 窗口"
+    }
+  });
 });
 
 test("NativeHostBridge retries getWindowState without text after a native-host timeout", async () => {

@@ -126,6 +126,10 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
       params: {
         name: "list_windows",
         arguments: {
+          computerUseStatus: {
+            title: "list_windows",
+            detail: "正在查找可操作窗口"
+          },
           claudeTurnMetadata: {
             session_id: "mcp-session",
             turn_id: "mcp-turn"
@@ -197,6 +201,11 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.equal(clickTool.inputSchema.properties.window.required.includes("id"), true);
     assert.equal(clickTool.inputSchema.properties.window.required.includes("app"), true);
     assert.equal(clickTool.inputSchema.properties.claudeTurnMetadata.required.includes("session_id"), true);
+    assert.equal(clickTool.inputSchema.properties.computerUseStatus.properties.detail.type, "string");
+    assert.match(clickTool.inputSchema.properties.computerUseStatus.description, /Agent-authored status/);
+    assert.match(clickTool.inputSchema.properties.computerUseStatus.properties.detail.description, /Model-written/);
+    assert.match(clickTool.inputSchema.properties.computerUseStatus.properties.detail.description, /正在查看 QQ 聊天窗口/);
+    assert.equal(clickTool.inputSchema.properties.meta.properties.computerUseStatus.properties.title.type, "string");
     assert.equal(clickTool.inputSchema.additionalProperties, false);
     assert.equal(clickTool.outputSchema.required.includes("screenPoint"), true);
     assert.equal(clickTool.outputSchema.properties.clickPlan.properties.virtualScreen.required.includes("originX"), true);
@@ -208,6 +217,21 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.deepEqual(listWindows.result.structuredContent, {
       windows: [{ id: 101, app: "demo.exe", title: "Demo Window" }]
     });
+    assert.deepEqual(
+      (instance.scaffold.runtime.nativeBridge as any).getRecordedInvocations()[0]?.payload,
+      {
+        codexTurnMetadata: {
+          session_id: "mcp-session",
+          turn_id: "mcp-turn"
+        },
+        computerUseStatus: {
+          title: "list_windows",
+          detail: "正在查找可操作窗口"
+        },
+        computerUseTrace: undefined,
+        host: "claude-code"
+      }
+    );
 
     const windowState = JSON.parse(windowStateLine!);
     assert.equal(windowState.result.content[0].type, "image");
