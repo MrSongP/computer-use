@@ -72,6 +72,8 @@ IMPORTANT: do not control Windows apps through unrelated mechanisms before attem
 ## Runtime Behavior
 
 - Keep using the same selected `targetApp`, `targetWindow`, and latest `state.window` objects across the task. If `targetWindow` already exists, keep using it until a stale handle, activation failure, or missing window error requires recovery.
+- On every Computer Use tool call, include `computerUseStatus.detail` when possible. This is written by the agent/model for the user, not inferred by the runtime. Keep it short, concrete, and understandable at a glance, such as `正在查看 QQ 聊天窗口`, `正在点击发送按钮`, or `正在确认消息是否已发送`. Avoid vague descriptions such as `正在操作应用`.
+- When a Computer Use workflow is complete and you are about to give the final answer, call `end_turn({})` once. This flushes lifecycle state and lets the local status overlay show completion instead of leaving the last operation label visible.
 - Choose one app from the latest `list_apps().apps` response. If it has exactly one suitable open window, call `get_window` on that returned window before the first snapshot. This resolves the chosen target into a current canonical object.
 - For app-control tasks, call `activate_window` once after selecting the target and before the first snapshot. Activation is idempotent, restores minimized windows, and returns a structured focus report. Skip this only when the task is explicitly passive inspection of multiple windows without stealing focus.
 - Use `list_windows` as a shortcut only when the task is explicitly about currently open windows or when recovering after you already know the app is running.

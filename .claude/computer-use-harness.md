@@ -161,7 +161,7 @@ Recommended output shape:
 | `select_file_in_dialog` | Dialog `window`, local file `path` | Dialog completion report; no upload/send implication |
 | `select_folder_in_dialog` | Dialog `window`, local folder `path` | Dialog completion report; no publish implication |
 | `set_save_path_in_dialog` | Dialog `window`, save `path` | Dialog completion report; no external publish implication |
-| `end_turn` | Empty object | Lifecycle state flushed |
+| `end_turn` | Empty object | Shows completion and flushes lifecycle state |
 
 ## Action Lane Semantics
 
@@ -188,8 +188,10 @@ Agents using this plugin should follow this loop:
 2. Rehydrate or select a canonical window with `get_window` when needed.
 3. Capture with `get_window_state` only as often as needed for the next decision.
 4. Choose the next atomic action from the returned facts.
-5. Execute batched input when the target is stable.
-6. Capture again to verify progress or completion.
-7. Stop on explicit failure, locked desktop, stale state that cannot be recovered, unsafe side effects, or ambiguous destination.
+5. Include an agent-written `computerUseStatus.detail` on each tool call when possible, using a short concrete phrase the user can understand at a glance.
+6. Execute batched input when the target is stable.
+7. Capture again to verify progress or completion.
+8. Call `end_turn({})` once before the final answer after a completed Computer Use workflow.
+9. Stop on explicit failure, locked desktop, stale state that cannot be recovered, unsafe side effects, or ambiguous destination.
 
 The agent may use shell, filesystem, tests, logs, and other host tools for non-UI work. The plugin owns Windows UI automation; it should not replace faster or more reliable non-UI inspection.
