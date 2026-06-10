@@ -34,7 +34,7 @@ export function createClaudeAdapter(
     {
       name: "end_turn",
       rpcMethod: "end_turn",
-      summary: "Close the active Claude Code computer-use turn and flush lifecycle state.",
+      summary: "Call once before the final answer to show completion, close the active Claude Code computer-use turn, and flush lifecycle state.",
       requiresWindowActivation: false,
       inputSchema: getClaudeToolInputSchema("end_turn"),
       outputSchema: getClaudeToolOutputSchema("end_turn")

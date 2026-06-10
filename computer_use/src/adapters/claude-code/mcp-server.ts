@@ -248,11 +248,13 @@ function extractToolCallPayload(args: unknown): ToolCallPayload {
     ...(explicitMeta ?? {}),
     claudeTurnMetadata: readTurnMetadata(input.claudeTurnMetadata),
     codexTurnMetadata: readTurnMetadata(input.codexTurnMetadata) ?? explicitMeta?.codexTurnMetadata,
+    computerUseStatus: readStatusMeta(input.computerUseStatus) ?? explicitMeta?.computerUseStatus,
     computerUseTrace: readTraceMeta(input.computerUseTrace) ?? explicitMeta?.computerUseTrace
   };
 
   delete input.claudeTurnMetadata;
   delete input.codexTurnMetadata;
+  delete input.computerUseStatus;
   delete input.computerUseTrace;
 
   return {
@@ -270,6 +272,7 @@ function readMeta(value: unknown): ClaudeCodeInvokeMeta | undefined {
     ...value,
     claudeTurnMetadata: readTurnMetadata(value.claudeTurnMetadata),
     codexTurnMetadata: readTurnMetadata(value.codexTurnMetadata),
+    computerUseStatus: readStatusMeta(value.computerUseStatus),
     computerUseTrace: readTraceMeta(value.computerUseTrace)
   };
 }
@@ -302,6 +305,21 @@ function readTraceMeta(value: unknown): ClaudeCodeInvokeMeta["computerUseTrace"]
     trace.outputDir = value.outputDir;
   }
   return hasAnyKey(trace) ? trace : undefined;
+}
+
+function readStatusMeta(value: unknown): ClaudeCodeInvokeMeta["computerUseStatus"] {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const status: ClaudeCodeInvokeMeta["computerUseStatus"] = {};
+  if (typeof value.title === "string" && value.title.trim().length > 0) {
+    status.title = value.title.trim();
+  }
+  if (typeof value.detail === "string" && value.detail.trim().length > 0) {
+    status.detail = value.detail.trim();
+  }
+  return hasAnyKey(status) ? status : undefined;
 }
 
 function toolResult(method: ClaudeCodeAdapterMethod, result: unknown): unknown {

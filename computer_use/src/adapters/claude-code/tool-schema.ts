@@ -390,10 +390,29 @@ const traceSchema: ToolInputSchema = {
   additionalProperties: false
 };
 
+const statusSchema: ToolInputSchema = {
+  type: "object",
+  description:
+    "Agent-authored status for the cursor overlay. Include this on every Computer Use tool call when possible so the user can immediately understand what the model is doing.",
+  properties: {
+    title: {
+      type: "string",
+      description: "Short status label chosen by the agent, usually the tool or action name, for example activate_window or click."
+    },
+    detail: {
+      type: "string",
+      description:
+        "Model-written, user-visible description of the current action. Keep it short, concrete, and easy to understand at a glance, for example '正在查看 QQ 聊天窗口' or '正在点击发送按钮'."
+    }
+  },
+  additionalProperties: false
+};
+
 const metaSchema: ToolInputSchema = {
   type: "object",
   properties: {
     codexTurnMetadata: turnMetadataSchema,
+    computerUseStatus: statusSchema,
     computerUseTrace: traceSchema,
     "x-oai-cua-request-budget-ms": {
       type: "number",
@@ -413,6 +432,7 @@ function withInvocationMetadata(schema: ToolInputSchema): ToolInputSchema {
       meta: metaSchema,
       claudeTurnMetadata: turnMetadataSchema,
       codexTurnMetadata: turnMetadataSchema,
+      computerUseStatus: statusSchema,
       computerUseTrace: traceSchema
     },
     additionalProperties: false
@@ -1166,6 +1186,6 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
       };
 
     case "end_turn":
-      return emptyObjectSchema("Close the current turn and flush lifecycle state.");
+      return emptyObjectSchema("Call once before the final answer to show completion, close the current turn, and flush lifecycle state.");
   }
 }
