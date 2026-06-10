@@ -20,6 +20,7 @@ import { resolveVirtualScreenMetrics, type VirtualScreenMetrics } from "../input
 import type { PointerClickFeedback, PointerClickOptions } from "../input/pointer-input-service.js";
 import type { KeyboardInput, PointerClick, PointerDrag, PointerScroll } from "../shared/win32-types.js";
 import type { NativeAppLaunchOptions, NativeBridge } from "./native-bridge.js";
+import { buildOperationStatus } from "./operation-status.js";
 import { PowerShellNativeBridge } from "./powershell-driver.js";
 
 const execFileAsync = promisify(execFile);
@@ -141,7 +142,7 @@ export class NativeHostBridge implements NativeBridge {
     this.fallbackTurnStarted = false;
   }
 
-  endTurn(): void {
+  async endTurn(): Promise<void> {
     const turnMeta = this.currentTurnMeta;
     const shouldEndFallbackTurn = this.fallbackTurnStarted;
     this.currentTurnMeta = undefined;
@@ -149,28 +150,29 @@ export class NativeHostBridge implements NativeBridge {
 
     if (this.fallbackActive) {
       if (shouldEndFallbackTurn) {
-        this.fallback.endTurn();
+        await this.fallback.endTurn();
       }
       return;
     }
 
-    const endTurnTask = this.enqueue(async () => {
-      try {
-        if (this.turnStarted) {
-          await this.invokeHost("endTurn", { meta: turnMeta ?? null });
+    try {
+      await this.enqueue(async () => {
+        try {
+          if (this.turnStarted) {
+            await this.updateCompletionStatus();
+            await this.invokeHost("endTurn", { meta: turnMeta ?? null });
+          }
+        } finally {
+          this.turnStarted = false;
+          this.disposeHostProcess();
+          if (shouldEndFallbackTurn) {
+            await this.fallback.endTurn();
+          }
         }
-      } finally {
-        this.turnStarted = false;
-        this.disposeHostProcess();
-        if (shouldEndFallbackTurn) {
-          this.fallback.endTurn();
-        }
-      }
-    });
-
-    void endTurnTask.catch((error) => {
+      });
+    } catch (error) {
       this.lifecycleError = normalizeUnknownError(error);
-    });
+    }
   }
 
   resetTurn(_reason?: string): void {
@@ -339,6 +341,7 @@ export class NativeHostBridge implements NativeBridge {
 
     await this.enqueue(async () => {
       await this.ensureTurnStarted();
+      await this.updateOperationStatus(method, payload);
       await this.invokeHost(method, payload);
     });
   }
@@ -353,6 +356,7 @@ export class NativeHostBridge implements NativeBridge {
 
     return await this.enqueue(async () => {
       await this.ensureTurnStarted();
+      await this.updateOperationStatus(method, payload);
       return await this.invokeHost(method, payload) as TResult;
     });
   }
@@ -382,6 +386,19 @@ export class NativeHostBridge implements NativeBridge {
 
     await this.invokeHost("beginTurn", { meta: this.currentTurnMeta ?? null });
     this.turnStarted = true;
+  }
+
+  private async updateOperationStatus(method: string, payload: Record<string, unknown>): Promise<void> {
+    const status = this.currentTurnMeta?.computerUseStatus ?? buildOperationStatus(method, payload);
+    await this.invokeHost("updateStatus", { ...status });
+  }
+
+  private async updateCompletionStatus(): Promise<void> {
+    await this.invokeHost("updateStatus", normalizeCompletionStatus({
+      title: "Done",
+      detail: "任务完成"
+    }));
+    await delay(450);
   }
 
   private async invokeOrFallback(
@@ -874,6 +891,17 @@ function combineFallbackFailure(primaryError: Error, fallbackError: unknown): Er
   return new Error(
     `${primaryError.message}\nFallback failed: ${normalizedFallback.message}`
   );
+}
+
+function normalizeCompletionStatus(_status: Record<string, unknown>): Record<string, unknown> {
+  return {
+    title: "Done",
+    detail: "Task complete"
+  };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function formatStderrSuffix(stderr: string): string {

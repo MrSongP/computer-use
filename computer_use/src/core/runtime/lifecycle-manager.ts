@@ -19,9 +19,9 @@ export class LifecycleManager {
     this.nativeBridge.beginTurn(meta);
   }
 
-  endTurn(): void {
+  async endTurn(): Promise<void> {
     this.currentTurn = undefined;
-    this.nativeBridge.endTurn();
+    await this.nativeBridge.endTurn();
   }
 
   resetTurn(reason?: string): void {
@@ -31,7 +31,7 @@ export class LifecycleManager {
       return;
     }
 
-    this.nativeBridge.endTurn();
+    void this.nativeBridge.endTurn();
   }
 
   getCurrentTurn(): JsonRpcMeta | undefined {

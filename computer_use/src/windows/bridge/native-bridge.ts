@@ -43,7 +43,7 @@ export interface NativeBridge {
   readonly driverName: string;
   readonly capabilities?: NativeBridgeCapabilities;
   beginTurn(meta?: JsonRpcMeta): void;
-  endTurn(): void;
+  endTurn(): Promise<void> | void;
   resetTurn?(reason?: string): void;
   getVirtualScreenMetrics(): Promise<VirtualScreenMetrics>;
   activateWindow(window: WindowRef): Promise<ActivateWindowResult>;

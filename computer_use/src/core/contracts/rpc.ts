@@ -9,6 +9,10 @@ export interface JsonRpcMeta {
   codexTurnMetadata?: TurnMetadata;
   "x-oai-cua-request-budget-ms"?: number;
   host?: string;
+  computerUseStatus?: {
+    title?: string;
+    detail?: string;
+  };
   computerUseTrace?: {
     enabled?: boolean;
     outputDir?: string;

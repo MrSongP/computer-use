@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -254,6 +255,7 @@ namespace ComputerUse.NativeHost
         private const string TaskbarAppId = "windows.shell.taskbar";
         private const string TaskbarDisplayName = "Windows Taskbar";
         private const string TaskbarWindowTitle = "Windows Taskbar";
+        private const string CursorStatusOverlayWindowTitle = "Computer Use Status Overlay";
         private static readonly string[] HiddenClassNames =
         {
             "Progman",
@@ -270,6 +272,8 @@ namespace ComputerUse.NativeHost
         private IntPtr mtaCookie;
         private TurnContext currentTurn;
         private PhysicalEscapeHookController escapeHook;
+        private CursorStatusOverlay statusOverlay;
+        private bool statusOverlayUnavailable;
 
         public object Dispatch(string method, Dictionary<string, object> payload)
         {
@@ -280,6 +284,12 @@ namespace ComputerUse.NativeHost
                     return null;
                 case "endTurn":
                     EndTurn();
+                    return null;
+                case "clearStatus":
+                    ClearStatus();
+                    return null;
+                case "updateStatus":
+                    UpdateStatus(payload);
                     return null;
                 case "activateWindow":
                     return ActivateWindow(GetWindowHandle(payload));
@@ -339,6 +349,7 @@ namespace ComputerUse.NativeHost
             payload["supportsDesktopSwitching"] = true;
             payload["supportsPhysicalEscapeHook"] = true;
             payload["providesVirtualScreenMetrics"] = true;
+            payload["supportsCursorStatusOverlay"] = true;
             return payload;
         }
 
@@ -348,6 +359,7 @@ namespace ComputerUse.NativeHost
             {
                 currentTurn = ParseTurnContext(payload);
                 EnsureEscapeHook();
+                EnsureStatusOverlay();
                 return;
             }
 
@@ -373,10 +385,17 @@ namespace ComputerUse.NativeHost
             turnInitialized = true;
             currentTurn = ParseTurnContext(payload);
             EnsureEscapeHook();
+            EnsureStatusOverlay();
         }
 
         private void EndTurn()
         {
+            if (statusOverlay != null)
+            {
+                statusOverlay.Dispose();
+                statusOverlay = null;
+            }
+
             if (escapeHook != null)
             {
                 escapeHook.Dispose();
@@ -405,6 +424,14 @@ namespace ComputerUse.NativeHost
             turnInitialized = false;
         }
 
+        private void ClearStatus()
+        {
+            if (statusOverlay != null)
+            {
+                statusOverlay.Hide();
+            }
+        }
+
         private void EnsureEscapeHook()
         {
             if (escapeHook != null)
@@ -420,6 +447,42 @@ namespace ComputerUse.NativeHost
 
             escapeHook = new PhysicalEscapeHookController(currentTurn);
             escapeHook.Start();
+        }
+
+        private void EnsureStatusOverlay()
+        {
+            if (statusOverlayUnavailable)
+            {
+                return;
+            }
+
+            if (statusOverlay == null)
+            {
+                try
+                {
+                    statusOverlay = new CursorStatusOverlay();
+                }
+                catch
+                {
+                    statusOverlay = null;
+                    statusOverlayUnavailable = true;
+                    return;
+                }
+            }
+
+            statusOverlay.UpdateStatus("computer_use", "正在操作应用");
+        }
+
+        private void UpdateStatus(IDictionary<string, object> payload)
+        {
+            EnsureTurnInitialized();
+            EnsureStatusOverlay();
+            var title = ReadOptionalString(payload, "title") ?? "computer_use";
+            var detail = ReadOptionalString(payload, "detail") ?? "正在操作应用";
+            if (statusOverlay != null)
+            {
+                statusOverlay.UpdateStatus(title, detail);
+            }
         }
 
         private Dictionary<string, object> ActivateWindow(IntPtr hwnd)
@@ -1628,6 +1691,11 @@ namespace ComputerUse.NativeHost
             }
 
             var title = GetWindowTitle(hwnd);
+            if (IsCursorStatusOverlayWindow(title))
+            {
+                return null;
+            }
+
             var processPath = GetProcessPath(processId);
             var appId = IsTaskbarRequested(requestedApp)
                 ? TaskbarAppId
@@ -1650,9 +1718,34 @@ namespace ComputerUse.NativeHost
             return payload;
         }
 
+        private static bool IsCursorStatusOverlayWindow(string title)
+        {
+            return !IsCursorStatusOverlayDebugEnabled() &&
+                string.Equals(title, CursorStatusOverlayWindowTitle, StringComparison.Ordinal);
+        }
+
+        private static bool IsCursorStatusOverlayDebugEnabled()
+        {
+            return IsTruthyEnvironmentVariable("COMPUTER_USE_STATUS_OVERLAY_DEBUG");
+        }
+
+        private static bool IsTruthyEnvironmentVariable(string name)
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "on", StringComparison.OrdinalIgnoreCase);
+        }
+
         private Dictionary<string, object> BuildWindowStatePayload(IntPtr hwnd, string requestedApp)
         {
             if (hwnd == IntPtr.Zero || !IsWindow(hwnd))
+            {
+                return null;
+            }
+
+            if (IsCursorStatusOverlayWindow(GetWindowTitle(hwnd)))
             {
                 return null;
             }
@@ -1754,7 +1847,10 @@ namespace ComputerUse.NativeHost
                 result = TryCaptureWindowWithWindowsGraphicsCapture(hwnd, jpegQuality);
                 if (result == null)
                 {
-                    result = CaptureWindowJpegWithGdi(rect, jpegQuality);
+                    using (statusOverlay == null ? null : statusOverlay.SuspendForScreenCapture())
+                    {
+                        result = CaptureWindowJpegWithGdi(rect, jpegQuality);
+                    }
                     result["degradedReason"] = "wgc_failed";
                     result["gdiFallbackAt"] = DateTimeOffset.UtcNow.ToString("o");
                 }
@@ -4806,6 +4902,1011 @@ namespace ComputerUse.NativeHost
         public string TurnId { get; private set; }
 
         public string CodexHome { get; private set; }
+    }
+
+    internal sealed class CursorStatusOverlay : IDisposable
+    {
+        private const string OverlayWindowTitle = "Computer Use Status Overlay";
+        private const int WmClose = 0x0010;
+        private readonly ManualResetEventSlim started = new ManualResetEventSlim(false);
+        private Thread thread;
+        private StatusForm form;
+        private Exception startupError;
+        private bool disposed;
+
+        public CursorStatusOverlay()
+        {
+            CloseExistingOverlayWindow();
+            thread = new Thread(Run);
+            thread.IsBackground = true;
+            thread.Name = "computer-use-cursor-status";
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+
+            if (!started.Wait(TimeSpan.FromSeconds(3)))
+            {
+                throw new InvalidOperationException("Timed out while starting the cursor status overlay.");
+            }
+
+            if (startupError != null)
+            {
+                throw startupError;
+            }
+        }
+
+        public void UpdateStatus(string title, string detail)
+        {
+            if (disposed || form == null || form.IsDisposed)
+            {
+                return;
+            }
+
+            form.BeginInvoke(new Action(delegate
+            {
+                if (!form.IsDisposed)
+                {
+                    form.UpdateStatus(title, detail);
+                }
+            }));
+        }
+
+        public void Hide()
+        {
+            var overlayForm = form;
+            if (disposed || overlayForm == null || overlayForm.IsDisposed)
+            {
+                return;
+            }
+
+            try
+            {
+                var hide = new Action(delegate
+                {
+                    if (!overlayForm.IsDisposed)
+                    {
+                        overlayForm.Hide();
+                    }
+                });
+
+                if (overlayForm.InvokeRequired)
+                {
+                    overlayForm.Invoke(hide);
+                }
+                else
+                {
+                    hide();
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        public IDisposable SuspendForScreenCapture()
+        {
+            var overlayForm = form;
+            if (disposed || overlayForm == null || overlayForm.IsDisposed)
+            {
+                return CaptureSuppression.Empty;
+            }
+
+            try
+            {
+                if (overlayForm.InvokeRequired)
+                {
+                    return (IDisposable)overlayForm.Invoke(new Func<IDisposable>(overlayForm.SuspendForScreenCapture));
+                }
+
+                return overlayForm.SuspendForScreenCapture();
+            }
+            catch
+            {
+                return CaptureSuppression.Empty;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+
+            var overlayForm = form;
+            if (overlayForm != null && !overlayForm.IsDisposed)
+            {
+                try
+                {
+                    overlayForm.BeginInvoke(new Action(delegate
+                    {
+                        overlayForm.Close();
+                    }));
+                }
+                catch
+                {
+                }
+            }
+
+            if (thread != null && thread.IsAlive)
+            {
+                thread.Join(1000);
+            }
+
+            started.Dispose();
+        }
+
+        private void Run()
+        {
+            try
+            {
+                System.Windows.Forms.Application.EnableVisualStyles();
+                form = new StatusForm();
+                form.Shown += delegate { started.Set(); };
+                System.Windows.Forms.Application.Run(form);
+            }
+            catch (Exception error)
+            {
+                startupError = error;
+                started.Set();
+            }
+        }
+
+        private static void CloseExistingOverlayWindow()
+        {
+            try
+            {
+                var hwnd = FindWindow(null, OverlayWindowTitle);
+                if (hwnd != IntPtr.Zero)
+                {
+                    PostMessage(hwnd, WmClose, IntPtr.Zero, IntPtr.Zero);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        [DllImport("user32.dll", SetLastError = false, CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindow(string className, string windowName);
+
+        [DllImport("user32.dll", SetLastError = false)]
+        private static extern bool PostMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        private sealed class CaptureSuppression : IDisposable
+        {
+            public static readonly IDisposable Empty = new CaptureSuppression(null);
+            private Action restore;
+
+            public CaptureSuppression(Action restore)
+            {
+                this.restore = restore;
+            }
+
+            public void Dispose()
+            {
+                var action = restore;
+                restore = null;
+                if (action != null)
+                {
+                    action();
+                }
+            }
+        }
+
+        private sealed class StatusForm : System.Windows.Forms.Form
+        {
+            private const int MarginToCursor = 18;
+            private const int ScreenMargin = 8;
+            private const int MinimumWidth = 260;
+            private const int MaximumWidth = 680;
+            private const int CapsuleHeight = 46;
+            private const int HorizontalPadding = 18;
+            private const int DotSize = 7;
+            private const int TextGap = 8;
+            private const int IdleFadeAfterMs = 30000;
+            private const double FullOpacity = 1.0;
+            private const double FadeStep = 0.055;
+            private const uint WdaExcludeFromCapture = 0x00000011;
+            private const int DwmaWindowCornerPreference = 33;
+            private const int DwmaSystemBackdropType = 38;
+            private const int DwmWindowCornerPreferenceRound = 2;
+            private const int DwmSystemBackdropTransientWindow = 3;
+            private readonly System.Windows.Forms.Timer followTimer;
+            private readonly Font titleFont = CreateUIFont(9.4f, FontStyle.Bold);
+            private readonly Font detailFont = CreateUIFont(9.2f, FontStyle.Regular);
+            private string title = "computer_use";
+            private DateTime lastUpdateUtc = DateTime.UtcNow;
+            private DateTime lastDebugRenderSaveUtc = DateTime.MinValue;
+            private bool excludedFromCapture;
+            private double animationPhase;
+            private string detail = "正在操作应用";
+
+            public StatusForm()
+            {
+                AutoScaleMode = System.Windows.Forms.AutoScaleMode.None;
+                BackColor = Color.Black;
+                DoubleBuffered = true;
+                FormBorderStyle = System.Windows.Forms.FormBorderStyle.None;
+                Opacity = FullOpacity;
+                ShowInTaskbar = false;
+                Size = new System.Drawing.Size(MinimumWidth, CapsuleHeight);
+                StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                Text = OverlayWindowTitle;
+                TopMost = true;
+
+                followTimer = new System.Windows.Forms.Timer();
+                followTimer.Interval = 33;
+                followTimer.Tick += delegate { TickOverlay(); };
+                followTimer.Start();
+
+                RebuildRegion();
+                RepositionNearCursor();
+            }
+
+            protected override void OnHandleCreated(EventArgs e)
+            {
+                base.OnHandleCreated(e);
+                ApplyCaptureExclusion();
+                ApplyNativeGlassHints();
+                RefreshLayeredWindow();
+            }
+
+            protected override bool ShowWithoutActivation
+            {
+                get { return true; }
+            }
+
+            protected override System.Windows.Forms.CreateParams CreateParams
+            {
+                get
+                {
+                    const int WsExToolWindow = 0x00000080;
+                    const int WsExTransparent = 0x00000020;
+                    const int WsExNoActivate = 0x08000000;
+                    const int WsExLayered = 0x00080000;
+                    var createParams = base.CreateParams;
+                    createParams.ExStyle |= WsExToolWindow | WsExTransparent | WsExNoActivate | WsExLayered;
+                    return createParams;
+                }
+            }
+
+            public void UpdateStatus(string nextTitle, string nextDetail)
+            {
+                title = NormalizeDisplayText(nextTitle, "computer_use");
+                lastUpdateUtc = DateTime.UtcNow;
+                Opacity = FullOpacity;
+                detail = NormalizeDisplayText(nextDetail, "正在操作应用");
+
+                var titleSize = System.Windows.Forms.TextRenderer.MeasureText(title + ":", titleFont);
+                var detailSize = System.Windows.Forms.TextRenderer.MeasureText(detail, detailFont);
+                var desiredWidth =
+                    HorizontalPadding +
+                    DotSize +
+                    TextGap +
+                    titleSize.Width +
+                    TextGap +
+                    detailSize.Width +
+                    HorizontalPadding;
+
+                Width = Math.Max(MinimumWidth, Math.Min(MaximumWidth, desiredWidth));
+                Height = CapsuleHeight;
+                RebuildRegion();
+                RepositionNearCursor();
+                RefreshLayeredWindow();
+
+                if (!Visible)
+                {
+                    Show();
+                }
+            }
+
+            public IDisposable SuspendForScreenCapture()
+            {
+                if (excludedFromCapture || !Visible || IsDisposed)
+                {
+                    return CaptureSuppression.Empty;
+                }
+
+                var wasVisible = Visible;
+                var previousOpacity = Opacity;
+                Hide();
+
+                return new CaptureSuppression(delegate
+                {
+                    if (IsDisposed || !wasVisible)
+                    {
+                        return;
+                    }
+
+                    Opacity = previousOpacity;
+                    RepositionNearCursor();
+                    Show();
+                });
+            }
+
+            protected override void OnPaint(System.Windows.Forms.PaintEventArgs e)
+            {
+                base.OnPaint(e);
+                DrawOverlay(e.Graphics);
+            }
+
+            protected override void OnResize(EventArgs e)
+            {
+                base.OnResize(e);
+                RebuildRegion();
+                RefreshLayeredWindow();
+            }
+
+            private void ApplyCaptureExclusion()
+            {
+                if (IsStatusOverlayDebugEnabled())
+                {
+                    excludedFromCapture = false;
+                    return;
+                }
+
+                try
+                {
+                    excludedFromCapture = SetWindowDisplayAffinity(Handle, WdaExcludeFromCapture);
+                }
+                catch
+                {
+                    excludedFromCapture = false;
+                }
+            }
+
+            private void ApplyNativeGlassHints()
+            {
+                if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+                {
+                    return;
+                }
+
+                TrySetDwmAttribute(DwmaWindowCornerPreference, DwmWindowCornerPreferenceRound);
+                TrySetDwmAttribute(DwmaSystemBackdropType, DwmSystemBackdropTransientWindow);
+            }
+
+            private void TrySetDwmAttribute(int attribute, int value)
+            {
+                try
+                {
+                    var nextValue = value;
+                    DwmSetWindowAttribute(Handle, attribute, ref nextValue, Marshal.SizeOf(typeof(int)));
+                }
+                catch
+                {
+                }
+            }
+
+            private void RefreshLayeredWindow()
+            {
+                if (!IsHandleCreated || Width <= 0 || Height <= 0)
+                {
+                    return;
+                }
+
+                using (var bitmap = new Bitmap(Width, Height, PixelFormat.Format32bppPArgb))
+                {
+                    using (var graphics = Graphics.FromImage(bitmap))
+                    {
+                        graphics.Clear(Color.Transparent);
+                        DrawOverlay(graphics);
+                    }
+
+                    SaveDebugRender(bitmap);
+                    UpdateLayeredWindowFromBitmap(bitmap);
+                }
+            }
+
+            private void SaveDebugRender(Bitmap bitmap)
+            {
+                if (!IsStatusOverlayDebugEnabled())
+                {
+                    return;
+                }
+
+                var now = DateTime.UtcNow;
+                if ((now - lastDebugRenderSaveUtc).TotalMilliseconds < 750)
+                {
+                    return;
+                }
+
+                lastDebugRenderSaveUtc = now;
+                try
+                {
+                    var outputDir = Path.Combine(Environment.CurrentDirectory, ".tmp");
+                    Directory.CreateDirectory(outputDir);
+                    bitmap.Save(Path.Combine(outputDir, "cursor-status-overlay-render.png"), ImageFormat.Png);
+
+                    using (var composite = new Bitmap(bitmap.Width, bitmap.Height, PixelFormat.Format32bppPArgb))
+                    {
+                        using (var graphics = Graphics.FromImage(composite))
+                        {
+                            DrawDebugCheckerboard(graphics, bitmap.Width, bitmap.Height);
+                            graphics.DrawImageUnscaled(bitmap, 0, 0);
+                        }
+
+                        composite.Save(
+                            Path.Combine(outputDir, "cursor-status-overlay-render-checker.png"),
+                            ImageFormat.Png
+                        );
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            private void DrawOverlay(Graphics graphics)
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.CompositingQuality = CompositingQuality.HighQuality;
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+                var bounds = new Rectangle(1, 1, Width - 2, Height - 2);
+                var palette = ResolvePalette();
+                DrawSoftShadow(graphics, bounds, palette);
+                using (var path = CreateRoundRectPath(bounds, 20))
+                {
+                    DrawGlassBody(graphics, bounds, path, palette);
+                    DrawRefractionBands(graphics, bounds, path, palette);
+                    DrawNoise(graphics, bounds, path, palette);
+                    DrawFlowHighlight(graphics, bounds, path, palette);
+                    DrawEdgeHighlights(graphics, bounds, palette);
+                }
+
+                DrawStatusContent(graphics, palette);
+            }
+
+            private void DrawStatusContent(Graphics graphics, GlassPalette palette)
+            {
+                var dotX = HorizontalPadding;
+                var dotY = (Height - DotSize) / 2;
+                using (var dotBrush = new SolidBrush(palette.Dot))
+                using (var dotGlow = new SolidBrush(palette.DotGlow))
+                {
+                    graphics.FillEllipse(dotGlow, dotX - 4, dotY - 4, DotSize + 8, DotSize + 8);
+                    graphics.FillEllipse(dotBrush, dotX, dotY, DotSize, DotSize);
+                }
+
+                var textX = dotX + DotSize + TextGap;
+                var titleText = title + ":";
+                var titleSize = System.Windows.Forms.TextRenderer.MeasureText(titleText, titleFont);
+                var detailSize = System.Windows.Forms.TextRenderer.MeasureText(detail, detailFont);
+                var textHeight = Math.Max(titleSize.Height, detailSize.Height);
+                var textY = Math.Max(0, (Height - textHeight) / 2);
+                graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                using (var titleBrush = new SolidBrush(palette.TitleText))
+                using (var detailBrush = new SolidBrush(palette.DetailText))
+                using (var format = new StringFormat(StringFormatFlags.NoWrap))
+                {
+                    format.Alignment = StringAlignment.Near;
+                    format.LineAlignment = StringAlignment.Center;
+                    format.Trimming = StringTrimming.EllipsisCharacter;
+
+                    var titleRect = new RectangleF(textX, textY, titleSize.Width + 2, textHeight);
+                    graphics.DrawString(titleText, titleFont, titleBrush, titleRect, format);
+
+                    var detailX = (int)Math.Ceiling(titleRect.Right) + TextGap;
+                    var detailRect = new RectangleF(
+                        detailX,
+                        textY,
+                        Math.Max(1, Width - detailX - HorizontalPadding),
+                        textHeight
+                    );
+                    graphics.DrawString(detail, detailFont, detailBrush, detailRect, format);
+                }
+            }
+
+            private void UpdateLayeredWindowFromBitmap(Bitmap bitmap)
+            {
+                var screenDc = GetDC(IntPtr.Zero);
+                var memoryDc = CreateCompatibleDC(screenDc);
+                var bitmapHandle = IntPtr.Zero;
+                var oldBitmap = IntPtr.Zero;
+
+                try
+                {
+                    bitmapHandle = CreatePremultipliedAlphaBitmap(bitmap);
+                    oldBitmap = SelectObject(memoryDc, bitmapHandle);
+
+                    var size = new LayeredSize { cx = bitmap.Width, cy = bitmap.Height };
+                    var source = new LayeredPoint { x = 0, y = 0 };
+                    var top = new LayeredPoint { x = Left, y = Top };
+                    var blend = new BlendFunction
+                    {
+                        BlendOp = 0,
+                        BlendFlags = 0,
+                        SourceConstantAlpha = 255,
+                        AlphaFormat = 1
+                    };
+
+                    UpdateLayeredWindow(Handle, screenDc, ref top, ref size, memoryDc, ref source, 0, ref blend, 2);
+                }
+                finally
+                {
+                    if (oldBitmap != IntPtr.Zero)
+                    {
+                        SelectObject(memoryDc, oldBitmap);
+                    }
+                    if (bitmapHandle != IntPtr.Zero)
+                    {
+                        DeleteObject(bitmapHandle);
+                    }
+                    if (memoryDc != IntPtr.Zero)
+                    {
+                        DeleteDC(memoryDc);
+                    }
+                    if (screenDc != IntPtr.Zero)
+                    {
+                        ReleaseDC(IntPtr.Zero, screenDc);
+                    }
+                }
+            }
+
+            private static IntPtr CreatePremultipliedAlphaBitmap(Bitmap bitmap)
+            {
+                var bitmapInfo = new BitmapInfo
+                {
+                    Header = new BitmapInfoHeader
+                    {
+                        Size = Marshal.SizeOf(typeof(BitmapInfoHeader)),
+                        Width = bitmap.Width,
+                        Height = -bitmap.Height,
+                        Planes = 1,
+                        BitCount = 32,
+                        Compression = 0,
+                        SizeImage = bitmap.Width * bitmap.Height * 4,
+                        XPelsPerMeter = 0,
+                        YPelsPerMeter = 0,
+                        ClrUsed = 0,
+                        ClrImportant = 0
+                    }
+                };
+
+                var bitmapHandle = CreateDIBSection(IntPtr.Zero, ref bitmapInfo, 0, out var bits, IntPtr.Zero, 0);
+                if (bitmapHandle == IntPtr.Zero || bits == IntPtr.Zero)
+                {
+                    throw new InvalidOperationException("Failed to create layered-window DIB section.");
+                }
+
+                var bounds = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+                var data = bitmap.LockBits(bounds, ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
+                try
+                {
+                    var targetStride = bitmap.Width * 4;
+                    var row = new byte[targetStride];
+                    for (var y = 0; y < bitmap.Height; y += 1)
+                    {
+                        Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), row, 0, targetStride);
+                        Marshal.Copy(row, 0, IntPtr.Add(bits, y * targetStride), targetStride);
+                    }
+                }
+                finally
+                {
+                    bitmap.UnlockBits(data);
+                }
+
+                return bitmapHandle;
+            }
+
+            private static void DrawSoftShadow(Graphics graphics, Rectangle bounds, GlassPalette palette)
+            {
+                using (var shadowPath = CreateRoundRectPath(new Rectangle(3, 5, bounds.Width - 4, bounds.Height - 5), 18))
+                using (var shadowBrush = new SolidBrush(palette.Shadow))
+                {
+                    graphics.FillPath(shadowBrush, shadowPath);
+                }
+            }
+
+            private static void DrawGlassBody(Graphics graphics, Rectangle bounds, GraphicsPath path, GlassPalette palette)
+            {
+                using (var background = new LinearGradientBrush(
+                    bounds,
+                    palette.FillTop,
+                    palette.FillBottom,
+                    LinearGradientMode.Vertical))
+                using (var border = new Pen(palette.OuterBorder, 1.0f))
+                {
+                    graphics.FillPath(background, path);
+                    graphics.DrawPath(border, path);
+                }
+            }
+
+            private static void DrawDebugCheckerboard(Graphics graphics, int width, int height)
+            {
+                var cell = 12;
+                using (var light = new SolidBrush(Color.FromArgb(255, 236, 244, 255)))
+                using (var cool = new SolidBrush(Color.FromArgb(255, 20, 184, 166)))
+                using (var blue = new SolidBrush(Color.FromArgb(255, 99, 102, 241)))
+                using (var warm = new SolidBrush(Color.FromArgb(255, 244, 114, 182)))
+                {
+                    graphics.FillRectangle(light, 0, 0, width, height);
+                    for (var y = 0; y < height; y += cell)
+                    {
+                        for (var x = 0; x < width; x += cell)
+                        {
+                            if (((x / cell) + (y / cell)) % 2 == 0)
+                            {
+                                graphics.FillRectangle(cool, x, y, cell, cell);
+                            }
+                        }
+                    }
+
+                    graphics.FillRectangle(blue, width / 3, 0, Math.Max(1, width / 3), height);
+                    graphics.FillRectangle(warm, (width * 2) / 3, 0, Math.Max(1, width / 3), height);
+                }
+            }
+
+            private static void DrawRefractionBands(Graphics graphics, Rectangle bounds, GraphicsPath path, GlassPalette palette)
+            {
+                var state = graphics.Save();
+                graphics.SetClip(path);
+                using (var coolBand = new LinearGradientBrush(
+                    new Rectangle(bounds.Left, bounds.Top, Math.Max(1, bounds.Width), Math.Max(1, bounds.Height)),
+                    palette.RefractionCool,
+                    Color.FromArgb(0, palette.RefractionCool),
+                    LinearGradientMode.ForwardDiagonal))
+                using (var warmBand = new LinearGradientBrush(
+                    new Rectangle(bounds.Left, bounds.Top, Math.Max(1, bounds.Width), Math.Max(1, bounds.Height)),
+                    Color.FromArgb(0, palette.RefractionWarm),
+                    palette.RefractionWarm,
+                    LinearGradientMode.BackwardDiagonal))
+                {
+                    graphics.FillPath(coolBand, path);
+                    graphics.FillPath(warmBand, path);
+                }
+                graphics.Restore(state);
+            }
+
+            private static void DrawNoise(Graphics graphics, Rectangle bounds, GraphicsPath path, GlassPalette palette)
+            {
+                var state = graphics.Save();
+                graphics.SetClip(path);
+                using (var brush = new SolidBrush(palette.Noise))
+                {
+                    for (var y = bounds.Top + 3; y < bounds.Bottom - 2; y += 4)
+                    {
+                        for (var x = bounds.Left + 3; x < bounds.Right - 2; x += 5)
+                        {
+                            if (((x * 17 + y * 31) & 7) == 0)
+                            {
+                                graphics.FillRectangle(brush, x, y, 1, 1);
+                            }
+                        }
+                    }
+                }
+                graphics.Restore(state);
+            }
+
+            private void DrawFlowHighlight(Graphics graphics, Rectangle bounds, GraphicsPath path, GlassPalette palette)
+            {
+                var state = graphics.Save();
+                graphics.SetClip(path);
+                var offset = (int)Math.Round((animationPhase % 1.0) * (bounds.Width + 160)) - 120;
+                var highlightBounds = new Rectangle(bounds.Left + offset, bounds.Top - 10, 120, bounds.Height + 20);
+                using (var highlight = new LinearGradientBrush(
+                    highlightBounds,
+                    Color.FromArgb(0, 255, 255, 255),
+                    palette.FlowHighlight,
+                    LinearGradientMode.ForwardDiagonal))
+                {
+                    graphics.FillPath(highlight, path);
+                }
+                graphics.Restore(state);
+            }
+
+            private static void DrawEdgeHighlights(Graphics graphics, Rectangle bounds, GlassPalette palette)
+            {
+                using (var innerPath = CreateRoundRectPath(new Rectangle(2, 2, bounds.Width - 3, bounds.Height - 3), 18))
+                using (var innerBorder = new Pen(palette.InnerBorder, 1.0f))
+                using (var topHighlight = new Pen(palette.TopHighlight, 1.0f))
+                using (var bottomShade = new Pen(palette.BottomShade, 1.0f))
+                {
+                    graphics.DrawPath(innerBorder, innerPath);
+                    graphics.DrawArc(topHighlight, bounds.Left + 5, bounds.Top + 2, bounds.Width - 10, 16, 200, 140);
+                    graphics.DrawArc(bottomShade, bounds.Left + 5, bounds.Bottom - 18, bounds.Width - 10, 16, 20, 140);
+                }
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    followTimer.Stop();
+                    followTimer.Dispose();
+                    titleFont.Dispose();
+                    detailFont.Dispose();
+                }
+
+                base.Dispose(disposing);
+            }
+
+            private void RepositionNearCursor()
+            {
+                var cursor = System.Windows.Forms.Cursor.Position;
+                var screen = System.Windows.Forms.Screen.FromPoint(cursor);
+                var area = screen.WorkingArea;
+
+                var x = cursor.X - (Width / 2);
+                var y = cursor.Y - Height - MarginToCursor;
+                if (y < area.Top + ScreenMargin)
+                {
+                    y = cursor.Y + MarginToCursor;
+                }
+
+                x = Math.Max(area.Left + ScreenMargin, Math.Min(x, area.Right - Width - ScreenMargin));
+                y = Math.Max(area.Top + ScreenMargin, Math.Min(y, area.Bottom - Height - ScreenMargin));
+                Location = new System.Drawing.Point(x, y);
+            }
+
+            private void TickOverlay()
+            {
+                RepositionNearCursor();
+
+                if (!Visible)
+                {
+                    return;
+                }
+
+                animationPhase = (animationPhase + 0.012) % 1.0;
+                RefreshLayeredWindow();
+
+                var idleMs = (DateTime.UtcNow - lastUpdateUtc).TotalMilliseconds;
+                if (idleMs < IdleFadeAfterMs)
+                {
+                    return;
+                }
+
+                Opacity = Math.Max(0, Opacity - FadeStep);
+                if (Opacity <= 0.05)
+                {
+                    Hide();
+                    Opacity = FullOpacity;
+                }
+            }
+
+            private void RebuildRegion()
+            {
+                var previous = Region;
+                using (var path = CreateRoundRectPath(new Rectangle(0, 0, Width, Height), Height / 2))
+                {
+                    Region = new Region(path);
+                }
+
+                if (previous != null)
+                {
+                    previous.Dispose();
+                }
+            }
+
+            private static GlassPalette ResolvePalette()
+            {
+                return SystemColors.Window.GetBrightness() < 0.45f
+                    ? GlassPalette.Dark
+                    : GlassPalette.Light;
+            }
+
+            private static bool IsStatusOverlayDebugEnabled()
+            {
+                var value = Environment.GetEnvironmentVariable("COMPUTER_USE_STATUS_OVERLAY_DEBUG");
+                return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(value, "on", StringComparison.OrdinalIgnoreCase);
+            }
+
+            private static GraphicsPath CreateRoundRectPath(Rectangle bounds, int radius)
+            {
+                var diameter = radius * 2;
+                var path = new GraphicsPath();
+                path.AddArc(bounds.Left, bounds.Top, diameter, diameter, 180, 90);
+                path.AddArc(bounds.Right - diameter, bounds.Top, diameter, diameter, 270, 90);
+                path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
+                path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
+                path.CloseFigure();
+                return path;
+            }
+
+            private sealed class GlassPalette
+            {
+                public static readonly GlassPalette Light = new GlassPalette(
+                    Color.FromArgb(32, 15, 23, 42),
+                    Color.FromArgb(34, 255, 255, 255),
+                    Color.FromArgb(16, 218, 232, 255),
+                    Color.FromArgb(178, 255, 255, 255),
+                    Color.FromArgb(112, 147, 197, 253),
+                    Color.FromArgb(150, 255, 255, 255),
+                    Color.FromArgb(34, 99, 102, 241),
+                    Color.FromArgb(14, 255, 255, 255),
+                    Color.FromArgb(62, 255, 255, 255),
+                    Color.FromArgb(18, 125, 211, 252),
+                    Color.FromArgb(12, 244, 114, 182),
+                    Color.FromArgb(255, 29, 78, 216),
+                    Color.FromArgb(255, 30, 41, 59),
+                    Color.FromArgb(255, 37, 99, 235),
+                    Color.FromArgb(76, 96, 165, 250)
+                );
+
+                public static readonly GlassPalette Dark = new GlassPalette(
+                    Color.FromArgb(64, 0, 0, 0),
+                    Color.FromArgb(54, 24, 34, 56),
+                    Color.FromArgb(30, 9, 17, 31),
+                    Color.FromArgb(132, 226, 232, 240),
+                    Color.FromArgb(78, 125, 211, 252),
+                    Color.FromArgb(112, 255, 255, 255),
+                    Color.FromArgb(72, 15, 23, 42),
+                    Color.FromArgb(18, 255, 255, 255),
+                    Color.FromArgb(46, 255, 255, 255),
+                    Color.FromArgb(16, 125, 211, 252),
+                    Color.FromArgb(10, 244, 114, 182),
+                    Color.FromArgb(255, 147, 197, 253),
+                    Color.FromArgb(255, 226, 232, 240),
+                    Color.FromArgb(255, 96, 165, 250),
+                    Color.FromArgb(86, 147, 197, 253)
+                );
+
+                public GlassPalette(
+                    Color shadow,
+                    Color fillTop,
+                    Color fillBottom,
+                    Color outerBorder,
+                    Color innerBorder,
+                    Color topHighlight,
+                    Color bottomShade,
+                    Color noise,
+                    Color flowHighlight,
+                    Color refractionCool,
+                    Color refractionWarm,
+                    Color titleText,
+                    Color detailText,
+                    Color dot,
+                    Color dotGlow)
+                {
+                    Shadow = shadow;
+                    FillTop = fillTop;
+                    FillBottom = fillBottom;
+                    OuterBorder = outerBorder;
+                    InnerBorder = innerBorder;
+                    TopHighlight = topHighlight;
+                    BottomShade = bottomShade;
+                    Noise = noise;
+                    FlowHighlight = flowHighlight;
+                    RefractionCool = refractionCool;
+                    RefractionWarm = refractionWarm;
+                    TitleText = titleText;
+                    DetailText = detailText;
+                    Dot = dot;
+                    DotGlow = dotGlow;
+                }
+
+                public Color Shadow { get; private set; }
+                public Color FillTop { get; private set; }
+                public Color FillBottom { get; private set; }
+                public Color OuterBorder { get; private set; }
+                public Color InnerBorder { get; private set; }
+                public Color TopHighlight { get; private set; }
+                public Color BottomShade { get; private set; }
+                public Color Noise { get; private set; }
+                public Color FlowHighlight { get; private set; }
+                public Color RefractionCool { get; private set; }
+                public Color RefractionWarm { get; private set; }
+                public Color TitleText { get; private set; }
+                public Color DetailText { get; private set; }
+                public Color Dot { get; private set; }
+                public Color DotGlow { get; private set; }
+            }
+
+            private static string NormalizeDisplayText(string value, string fallback)
+            {
+                return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+            }
+
+            private static Font CreateUIFont(float size, FontStyle style)
+            {
+                try
+                {
+                    return new Font("Microsoft YaHei UI", size, style, GraphicsUnit.Point);
+                }
+                catch
+                {
+                    return new Font(SystemFonts.MessageBoxFont.FontFamily, size, style, GraphicsUnit.Point);
+                }
+            }
+
+            [DllImport("user32.dll", SetLastError = true)]
+            private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
+
+            [DllImport("dwmapi.dll", PreserveSig = true)]
+            private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+            [DllImport("user32.dll", SetLastError = true)]
+            private static extern IntPtr GetDC(IntPtr hwnd);
+
+            [DllImport("user32.dll", SetLastError = true)]
+            private static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
+
+            [DllImport("gdi32.dll", SetLastError = true)]
+            private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+            [DllImport("gdi32.dll", SetLastError = true)]
+            private static extern bool DeleteDC(IntPtr hdc);
+
+            [DllImport("gdi32.dll", SetLastError = true)]
+            private static extern IntPtr SelectObject(IntPtr hdc, IntPtr handle);
+
+            [DllImport("gdi32.dll", SetLastError = true)]
+            private static extern bool DeleteObject(IntPtr handle);
+
+            [DllImport("gdi32.dll", SetLastError = true)]
+            private static extern IntPtr CreateDIBSection(
+                IntPtr hdc,
+                ref BitmapInfo bitmapInfo,
+                uint usage,
+                out IntPtr bits,
+                IntPtr section,
+                uint offset);
+
+            [DllImport("user32.dll", SetLastError = true)]
+            private static extern bool UpdateLayeredWindow(
+                IntPtr hwnd,
+                IntPtr destinationDc,
+                ref LayeredPoint destinationPoint,
+                ref LayeredSize size,
+                IntPtr sourceDc,
+                ref LayeredPoint sourcePoint,
+                int colorKey,
+                ref BlendFunction blend,
+                int flags);
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct LayeredPoint
+            {
+                public int x;
+                public int y;
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct LayeredSize
+            {
+                public int cx;
+                public int cy;
+            }
+
+            [StructLayout(LayoutKind.Sequential, Pack = 1)]
+            private struct BlendFunction
+            {
+                public byte BlendOp;
+                public byte BlendFlags;
+                public byte SourceConstantAlpha;
+                public byte AlphaFormat;
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct BitmapInfo
+            {
+                public BitmapInfoHeader Header;
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct BitmapInfoHeader
+            {
+                public int Size;
+                public int Width;
+                public int Height;
+                public short Planes;
+                public short BitCount;
+                public int Compression;
+                public int SizeImage;
+                public int XPelsPerMeter;
+                public int YPelsPerMeter;
+                public int ClrUsed;
+                public int ClrImportant;
+            }
+        }
     }
 
     internal sealed class PhysicalEscapeHookController : IDisposable

@@ -41,7 +41,7 @@ export class EndTurnCoordinator {
       this.closedInterruptScopes.delete(buildInterruptScopeKey(currentTurnMeta));
     }
 
-    this.lifecycle.endTurn();
+    await this.lifecycle.endTurn();
     this.interrupts.clear();
     this.currentTurnMeta = undefined;
   }

@@ -16,6 +16,7 @@
     "install:claude": "node ../scripts/install-plugin.mjs install claude",
     "install:claude:compiled": "node ../scripts/install-plugin.mjs install claude --skip-build --skip-native",
     "trace:summary": "node --import tsx ./scripts/trace-summary.ts",
+    "smoke:cursor-status": "node ./scripts/smoke-cursor-status-overlay.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts"
   },
