@@ -40,14 +40,14 @@ Dialog helpers complete only local standard Windows dialogs. They do not send, u
 Install into Codex:
 
 ```powershell
-cd D:\Desktop\computer-use
+cd <path-to-cloned-repo>
 npm run install:codex
 ```
 
 Install into Claude Code:
 
 ```powershell
-cd D:\Desktop\computer-use
+cd <path-to-cloned-repo>
 npm run install:claude
 ```
 

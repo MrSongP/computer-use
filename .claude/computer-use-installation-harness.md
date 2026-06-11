@@ -4,8 +4,8 @@ This is the agent-facing installation contract for `computer_use`.
 
 ## Installation Model
 
-- Plugin root: `D:\Desktop\computer-use\computer_use`
-- Codex marketplace: `D:\Desktop\computer-use\.agents\plugins\marketplace.json`
+- Plugin root: `computer_use`
+- Codex marketplace: `.agents\plugins\marketplace.json`
 - Codex manifest: `computer_use\.codex-plugin\plugin.json`
 - Claude manifest: `computer_use\.claude-plugin\plugin.json`
 - MCP manifest: `computer_use\.mcp.json`

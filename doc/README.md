@@ -33,13 +33,13 @@ Do not put agent harnesses, task checklists, temporary investigation notes, trac
 
 ## Code Anchors
 
-- Plugin root: `D:\Desktop\computer-use\computer_use`
-- Codex manifest: `D:\Desktop\computer-use\computer_use\.codex-plugin\plugin.json`
-- Claude Code manifest: `D:\Desktop\computer-use\computer_use\.claude-plugin\plugin.json`
-- MCP manifest: `D:\Desktop\computer-use\computer_use\.mcp.json`
-- Codex marketplace: `D:\Desktop\computer-use\.agents\plugins\marketplace.json`
-- Shared core: `D:\Desktop\computer-use\computer_use\src\core`
-- Windows implementation: `D:\Desktop\computer-use\computer_use\src\windows`
-- Host adapters: `D:\Desktop\computer-use\computer_use\src\adapters`
-- Native host: `D:\Desktop\computer-use\computer_use\native-host\ComputerUse.NativeHost`
-- Tests: `D:\Desktop\computer-use\computer_use\tests`
+- Plugin root: `computer_use`
+- Codex manifest: `computer_use\.codex-plugin\plugin.json`
+- Claude Code manifest: `computer_use\.claude-plugin\plugin.json`
+- MCP manifest: `computer_use\.mcp.json`
+- Codex marketplace: `.agents\plugins\marketplace.json`
+- Shared core: `computer_use\src\core`
+- Windows implementation: `computer_use\src\windows`
+- Host adapters: `computer_use\src\adapters`
+- Native host: `computer_use\native-host\ComputerUse.NativeHost`
+- Tests: `computer_use\tests`

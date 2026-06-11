@@ -34,14 +34,14 @@ winget install --id Microsoft.DotNet.SDK.8 --exact --accept-source-agreements --
 从仓库根目录安装到 Codex：
 
 ```powershell
-cd D:\Desktop\computer-use
+cd <path-to-cloned-repo>
 npm run install:codex
 ```
 
 安装到 Claude Code：
 
 ```powershell
-cd D:\Desktop\computer-use
+cd <path-to-cloned-repo>
 npm run install:claude
 ```
 
@@ -93,7 +93,7 @@ Windows native host 是按 turn/任务作用域管理的资源。正常完成、
 ## 开发
 
 ```powershell
-cd D:\Desktop\computer-use
+cd <path-to-cloned-repo>
 npm run typecheck
 npm test
 ```

@@ -23,7 +23,7 @@ Required tools:
 Prefer the repository-root npm commands:
 
 ```powershell
-cd D:\Desktop\computer-use
+cd <path-to-cloned-repo>
 npm run install:codex
 npm run install:claude
 ```

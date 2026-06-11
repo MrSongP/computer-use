@@ -34,14 +34,14 @@ If `dotnet` is not available in the current terminal after installation, the ins
 Install into Codex from the repository root:
 
 ```powershell
-cd D:\Desktop\computer-use
+cd <path-to-cloned-repo>
 npm run install:codex
 ```
 
 Install into Claude Code:
 
 ```powershell
-cd D:\Desktop\computer-use
+cd <path-to-cloned-repo>
 npm run install:claude
 ```
 
@@ -93,7 +93,7 @@ The Windows native host is turn-scoped. Normal completion, adapter close/shutdow
 ## Development
 
 ```powershell
-cd D:\Desktop\computer-use
+cd <path-to-cloned-repo>
 npm run typecheck
 npm test
 ```
