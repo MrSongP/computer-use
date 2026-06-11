@@ -324,9 +324,6 @@ function readStatusMeta(value: unknown): ClaudeCodeInvokeMeta["computerUseStatus
   }
 
   const status: ClaudeCodeInvokeMeta["computerUseStatus"] = {};
-  if (typeof value.title === "string" && value.title.trim().length > 0) {
-    status.title = value.title.trim();
-  }
   if (typeof value.detail === "string" && value.detail.trim().length > 0) {
     status.detail = value.detail.trim();
   }

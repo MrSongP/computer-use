@@ -403,8 +403,12 @@ export class NativeHostBridge implements NativeBridge {
   }
 
   private async updateOperationStatus(method: string, payload: Record<string, unknown>): Promise<void> {
-    const status = this.currentTurnMeta?.computerUseStatus ?? buildOperationStatus(method, payload);
-    await this.invokeHost("updateStatus", { ...status });
+    const status = buildOperationStatus(method, payload);
+    const detail = this.currentTurnMeta?.computerUseStatus?.detail?.trim();
+    await this.invokeHost("updateStatus", {
+      title: status.title,
+      detail: detail || status.detail
+    });
   }
 
   private async updateCompletionStatus(): Promise<void> {

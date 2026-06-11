@@ -393,16 +393,12 @@ const traceSchema: ToolInputSchema = {
 const statusSchema: ToolInputSchema = {
   type: "object",
   description:
-    "Agent-authored status for the cursor overlay. Include this on every Computer Use tool call when possible so the user can immediately understand what the model is doing.",
+    "Model-authored action detail for the cursor overlay. The tool label is chosen by the runtime from the actual tool name; provide only the user-visible action detail.",
   properties: {
-    title: {
-      type: "string",
-      description: "Short status label chosen by the agent, usually the tool or action name, for example activate_window or click."
-    },
     detail: {
       type: "string",
       description:
-        "Model-written, user-visible description of the current action. Keep it short, concrete, and easy to understand at a glance, for example '正在查看 QQ 聊天窗口' or '正在点击发送按钮'."
+        "Model-written, user-visible description of the current action. Keep it short, concrete, and easy to understand at a glance, for example 'checking the QQ chat window' or 'clicking the send button'."
     }
   },
   additionalProperties: false

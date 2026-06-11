@@ -202,10 +202,11 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.equal(clickTool.inputSchema.properties.window.required.includes("app"), true);
     assert.equal(clickTool.inputSchema.properties.claudeTurnMetadata.required.includes("session_id"), true);
     assert.equal(clickTool.inputSchema.properties.computerUseStatus.properties.detail.type, "string");
-    assert.match(clickTool.inputSchema.properties.computerUseStatus.description, /Agent-authored status/);
+    assert.match(clickTool.inputSchema.properties.computerUseStatus.description, /Model-authored action detail/);
     assert.match(clickTool.inputSchema.properties.computerUseStatus.properties.detail.description, /Model-written/);
-    assert.match(clickTool.inputSchema.properties.computerUseStatus.properties.detail.description, /正在查看 QQ 聊天窗口/);
-    assert.equal(clickTool.inputSchema.properties.meta.properties.computerUseStatus.properties.title.type, "string");
+    assert.match(clickTool.inputSchema.properties.computerUseStatus.properties.detail.description, /checking the QQ chat window/);
+    assert.equal(clickTool.inputSchema.properties.computerUseStatus.properties.title, undefined);
+    assert.equal(clickTool.inputSchema.properties.meta.properties.computerUseStatus.properties.title, undefined);
     assert.equal(clickTool.inputSchema.additionalProperties, false);
     assert.equal(clickTool.outputSchema.required.includes("screenPoint"), true);
     assert.equal(clickTool.outputSchema.properties.clickPlan.properties.virtualScreen.required.includes("originX"), true);
@@ -225,7 +226,6 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
           turn_id: "mcp-turn"
         },
         computerUseStatus: {
-          title: "list_windows",
           detail: "正在查找可操作窗口"
         },
         computerUseTrace: undefined,

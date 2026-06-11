@@ -211,7 +211,7 @@ test("NativeHostBridge updates cursor status before primary native-host calls", 
   ]);
 });
 
-test("NativeHostBridge prefers agent-provided cursor status metadata", async () => {
+test("NativeHostBridge keeps runtime status title while using agent-provided detail", async () => {
   const bridge = new NativeHostBridge({
     fallback: new NullNativeBridge()
   });
@@ -234,7 +234,7 @@ test("NativeHostBridge prefers agent-provided cursor status metadata", async () 
   assert.deepEqual(calls[0], {
     method: "updateStatus",
     payload: {
-      title: "activate_window",
+      title: "Find Windows",
       detail: "正在激活 QQ 窗口"
     }
   });
