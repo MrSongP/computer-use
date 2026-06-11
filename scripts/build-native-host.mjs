@@ -13,12 +13,11 @@ const projectPath = path.join(
   "ComputerUse.NativeHost",
   "ComputerUse.NativeHost.csproj"
 );
-const sourcePath = path.join(
+const sourceRootPath = path.join(
   repoRoot,
   "computer_use",
   "native-host",
-  "ComputerUse.NativeHost",
-  "Program.cs"
+  "ComputerUse.NativeHost"
 );
 const configuration = process.env.COMPUTER_USE_NATIVE_CONFIGURATION ?? "Release";
 const defaultWindowsDotnetPaths = [
@@ -32,7 +31,7 @@ async function main() {
   }
 
   await assertFile(projectPath, "native host project");
-  await assertFile(sourcePath, "native host source");
+  await assertDirectory(sourceRootPath, "native host source directory");
 
   const dotnet = await resolveDotnetCommand(process.env.COMPUTER_USE_DOTNET_PATH);
   if (!dotnet) {
@@ -80,6 +79,19 @@ async function resolveCommand(command) {
 async function assertFile(file, label) {
   if (!(await pathExists(file))) {
     throw new Error(`Missing ${label}: ${file}`);
+  }
+}
+
+async function assertDirectory(directory, label) {
+  let fileStat;
+  try {
+    fileStat = await stat(directory);
+  } catch {
+    throw new Error(`Missing ${label}: ${directory}`);
+  }
+
+  if (!fileStat.isDirectory()) {
+    throw new Error(`${label} is not a directory: ${directory}`);
   }
 }
 

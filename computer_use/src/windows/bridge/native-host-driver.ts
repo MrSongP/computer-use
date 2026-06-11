@@ -1,6 +1,6 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { promisify } from "node:util";
-import { stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -34,10 +34,7 @@ const DEFAULT_PROJECT_PATH = resolveNativeHostPath(
   "../../../native-host/ComputerUse.NativeHost/ComputerUse.NativeHost.csproj",
   "../../../../native-host/ComputerUse.NativeHost/ComputerUse.NativeHost.csproj"
 );
-const DEFAULT_PROGRAM_PATH = resolveNativeHostPath(
-  "../../../native-host/ComputerUse.NativeHost/Program.cs",
-  "../../../../native-host/ComputerUse.NativeHost/Program.cs"
-);
+const DEFAULT_SOURCE_ROOT_PATH = path.dirname(DEFAULT_PROJECT_PATH);
 
 interface NativeHostRequest {
   id: number;
@@ -69,6 +66,7 @@ export interface NativeHostBridgeOptions {
   idleHostTimeoutMs?: number;
   projectPath?: string;
   requestTimeoutMs?: number;
+  sourceRootPath?: string;
   sourcePath?: string;
   startupTimeoutMs?: number;
 }
@@ -104,7 +102,7 @@ export class NativeHostBridge implements NativeBridge {
   private readonly idleHostTimeoutMs: number;
   private readonly projectPath: string;
   private readonly requestTimeoutMs: number;
-  private readonly sourcePath: string;
+  private readonly sourceRootPath: string;
   private readonly startupTimeoutMs: number;
   private currentTurnMeta?: JsonRpcMeta;
   private fallbackActive = false;
@@ -128,7 +126,7 @@ export class NativeHostBridge implements NativeBridge {
     this.idleHostTimeoutMs = options.idleHostTimeoutMs ?? readIdleHostTimeoutMs(process.env.COMPUTER_USE_NATIVE_HOST_IDLE_TIMEOUT_MS);
     this.projectPath = options.projectPath ?? DEFAULT_PROJECT_PATH;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 20_000;
-    this.sourcePath = options.sourcePath ?? DEFAULT_PROGRAM_PATH;
+    this.sourceRootPath = options.sourceRootPath ?? (options.sourcePath ? path.dirname(options.sourcePath) : DEFAULT_SOURCE_ROOT_PATH);
     this.startupTimeoutMs = options.startupTimeoutMs ?? 15_000;
   }
 
@@ -623,7 +621,7 @@ export class NativeHostBridge implements NativeBridge {
       buildTimeoutMs: this.buildTimeoutMs,
       dotnetExecutable: this.dotnetExecutable,
       projectPath: this.projectPath,
-      sourcePath: this.sourcePath
+      sourceRootPath: this.sourceRootPath
     });
 
     const child = spawn(launchSpec.command, [...launchSpec.args], {
@@ -790,7 +788,7 @@ interface NativeHostAssemblyOptions {
   buildTimeoutMs: number;
   dotnetExecutable?: string;
   projectPath: string;
-  sourcePath: string;
+  sourceRootPath: string;
 }
 
 interface NativeHostLaunchSpec {
@@ -809,7 +807,7 @@ async function ensureNativeHostAssembly(options: NativeHostAssemblyOptions): Pro
   }
 
   const assemblyPath = getNativeHostAssemblyPath(options.projectPath, options.buildConfiguration);
-  if (await shouldBuildNativeHost(assemblyPath, options.projectPath, options.sourcePath)) {
+  if (await shouldBuildNativeHost(assemblyPath, options.projectPath, options.sourceRootPath)) {
     try {
       await execFileAsync(
         dotnetExecutable,
@@ -834,19 +832,47 @@ async function ensureNativeHostAssembly(options: NativeHostAssemblyOptions): Pro
 async function shouldBuildNativeHost(
   assemblyPath: string,
   projectPath: string,
-  sourcePath: string
+  sourceRootPath: string
 ): Promise<boolean> {
   try {
-    const [assemblyStat, projectStat, programStat] = await Promise.all([
+    const sourcePaths = await listNativeHostSourceFiles(sourceRootPath);
+    if (sourcePaths.length === 0) {
+      return true;
+    }
+
+    const [assemblyStat, projectStat, ...sourceStats] = await Promise.all([
       stat(assemblyPath),
       stat(projectPath),
-      stat(sourcePath)
+      ...sourcePaths.map((sourcePath) => stat(sourcePath))
     ]);
-    const newestSource = Math.max(projectStat.mtimeMs, programStat.mtimeMs);
+    const newestSource = Math.max(projectStat.mtimeMs, ...sourceStats.map((sourceStat) => sourceStat.mtimeMs));
     return newestSource > assemblyStat.mtimeMs;
   } catch {
     return true;
   }
+}
+
+async function listNativeHostSourceFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const sourcePaths: string[] = [];
+
+  for (const entry of entries) {
+    if (entry.name === "bin" || entry.name === "obj") {
+      continue;
+    }
+
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      sourcePaths.push(...await listNativeHostSourceFiles(entryPath));
+      continue;
+    }
+
+    if (entry.isFile() && entry.name.endsWith(".cs")) {
+      sourcePaths.push(entryPath);
+    }
+  }
+
+  return sourcePaths;
 }
 
 function getNativeHostAssemblyPath(projectPath: string, buildConfiguration: string): string {
