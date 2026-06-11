@@ -22,6 +22,26 @@ The plugin is not an application-specific assistant. It does not teach an agent 
 
 The project exposes the same core runtime through Codex and Claude Code adapters. The native Windows host is responsible for Win32, Windows Graphics Capture, UI Automation, input injection, common dialogs, and app/window discovery.
 
+## Native Host Lifecycle
+
+The .NET native host is a turn-scoped execution resource, not a framework service that should stay resident for performance. A Computer Use task is considered lifecycle-complete when the agent has either:
+
+- called `end_turn({})` after the final verified UI step,
+- closed the adapter/runtime through `close` or MCP `shutdown`, or
+- moved to a different turn scope that causes the previous unfinished turn to be reset.
+
+At that point the runtime must release turn resources. The expected release chain is `EndTurnCoordinator` -> `LifecycleManager` -> native bridge `endTurn` or `resetTurn` -> native-host `EndTurn`, followed by disposal of the native host process. Native-host `EndTurn` releases turn-owned resources such as the status overlay, physical Escape hook, WinRT initialization, and COM MTA usage.
+
+The runtime has three cleanup layers:
+
+- Explicit lifecycle calls: `end_turn`, `close`, and MCP `shutdown`.
+- Host disconnect handling: stdio/input stream close triggers adapter/runtime cleanup for interrupted Claude Code and Codex helper sessions.
+- Idle cleanup: the native bridge disposes the native host after a short idle window when no new Computer Use call arrives. The default is 5 seconds and can be adjusted with `COMPUTER_USE_NATIVE_HOST_IDLE_TIMEOUT_MS`; `0` disables the idle timer for diagnostics only.
+
+Restarting the native host is acceptable framework cost. After the C# project has already been built, startup is just launching `dotnet ComputerUse.NativeHost.dll` and completing the ping handshake; it is expected to be lightweight compared with real UI operations. The expensive path is a first build or rebuild after source changes, not normal per-turn process startup.
+
+Do not justify keeping a stale native host alive as a latency optimization. An idle native host should normally use little CPU, but it still holds a `dotnet.exe` process and may hold turn-scoped Windows resources if cleanup was skipped. A remaining `ComputerUse.NativeHost.dll` process after an interrupted or finished task, with no active Computer Use operation, is a lifecycle cleanup problem to investigate rather than expected steady state.
+
 ## Architecture Boundaries
 
 - Dependency direction is `adapters -> core -> windows -> native host`.
@@ -193,5 +213,7 @@ Agents using this plugin should follow this loop:
 7. Capture again to verify progress or completion.
 8. Call `end_turn({})` once before the final answer after a completed Computer Use workflow.
 9. Stop on explicit failure, locked desktop, stale state that cannot be recovered, unsafe side effects, or ambiguous destination.
+
+If the agent or host is interrupted before step 8, the adapter/runtime cleanup hooks and native-host idle timeout are responsible for releasing Computer Use resources. Agents should still call `end_turn({})` on normal completion because it gives the cleanest completion status and trace lifecycle.
 
 The agent may use shell, filesystem, tests, logs, and other host tools for non-UI work. The plugin owns Windows UI automation; it should not replace faster or more reliable non-UI inspection.

@@ -52,7 +52,7 @@ Responsibilities:
 - `src/windows/bridge/native-host-driver.ts`
 - `native-host/ComputerUse.NativeHost/Program.cs`
 
-The resident .NET native host is the primary real Windows execution path. Compatibility bridge files may remain in the tree, but the native host is the project-supported path for full Windows behavior.
+The turn-scoped .NET native host is the primary real Windows execution path. Compatibility bridge files may remain in the tree, but the native host is the project-supported path for full Windows behavior.
 
 ## Required Semantics
 
@@ -64,6 +64,9 @@ The resident .NET native host is the primary real Windows execution path. Compat
 - Turn lifecycle goes through `lifecycle-manager.ts` and `end-turn.ts`.
 - Interrupted turns and unfinished old turns are reset through `LifecycleManager.resetTurn`.
 - Native-host reset disposes the resident host process so queued work does not leak into a later turn.
+- The native host is turn-scoped rather than performance-resident. Explicit lifecycle calls, stdio/input close handling, process cleanup hooks, and the native bridge idle timeout all converge on releasing Computer Use resources.
+- After a built host exists, normal restart cost is limited to launching `dotnet ComputerUse.NativeHost.dll` and completing the ping handshake, so stale host processes must be treated as lifecycle cleanup failures instead of accepted steady state.
+- `COMPUTER_USE_NATIVE_HOST_IDLE_TIMEOUT_MS` controls the native bridge idle release window. The default is 5 seconds; `0` is reserved for diagnostics that intentionally disable idle disposal.
 
 ## Verification Surface
 

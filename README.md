@@ -88,6 +88,8 @@ The .NET build targets `net8.0-windows10.0.19041.0` so the native host can consu
 
 `launch_app` blocks duplicate cold launches by default. If an existing session is detected, the hook returns guidance to restore the app from `windows.shell.taskbar`; only an explicit `force_new` bypasses this behavior.
 
+The Windows native host is turn-scoped. Normal completion, adapter close/shutdown, host stdio disconnect, process cleanup hooks, and a short native-host idle timeout release Computer Use resources; the host is restarted on demand because post-build startup is lightweight compared with desktop operations.
+
 ## Development
 
 ```powershell

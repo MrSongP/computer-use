@@ -62,7 +62,7 @@ The native host targets `net8.0-windows10.0.19041.0` for Windows SDK C#/WinRT pr
 
 ## Runtime Notes
 
-- On Windows, `createWindowsRuntime()` defaults to the resident native-host bridge.
+- On Windows, `createWindowsRuntime()` defaults to the native-host bridge. The .NET native host is released on lifecycle close/reset and after a short idle window rather than kept alive as a performance-resident service.
 - Tests use a mock bridge by default to avoid accidental real desktop input.
 - The native-host smoke test validates screenshots and UIA pattern actions against a Windows Forms fixture.
 - `get_window_state` exposes capture degradation diagnostics. When WGC fails and the native host falls back to GDI, the response carries `screenshot.degradedReason: "wgc_failed"`, `screenshot.gdiFallbackAt`, and `capture.degradedReasons`.

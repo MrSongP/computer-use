@@ -1,6 +1,6 @@
 # computer_use Project Overview
 
-`computer_use` is a local Windows computer-use plugin for Codex and Claude Code. It exposes atomic desktop automation tools through a TypeScript runtime, an MCP server, and a resident Windows native host.
+`computer_use` is a local Windows computer-use plugin for Codex and Claude Code. It exposes atomic desktop automation tools through a TypeScript runtime, an MCP server, and a turn-scoped Windows native host.
 
 The plugin is built for agents. It provides facts and actions for Windows UI automation; agents remain responsible for choosing the correct app, interpreting task intent, verifying destinations, and deciding when a workflow is complete.
 
@@ -32,7 +32,7 @@ Dialog helpers complete only local standard Windows dialogs. They do not send, u
 - `computer_use/src/core/` contains contracts, capability handlers, dispatch, lifecycle, interrupt handling, runtime context, and trace infrastructure.
 - `computer_use/src/windows/` contains Windows services for discovery, launch, capture, activation, input, UIA, dialogs, and native-host bridging.
 - `computer_use/src/adapters/` maps the shared runtime into Codex and Claude Code surfaces.
-- `computer_use/native-host/ComputerUse.NativeHost/` contains the resident .NET Windows host.
+- `computer_use/native-host/ComputerUse.NativeHost/` contains the turn-scoped .NET Windows host.
 - `computer_use/tests/` contains unit, integration, adapter, stdio, trace, and native-host smoke tests.
 
 ## Installation Entry Points
