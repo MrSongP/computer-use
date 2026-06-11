@@ -15,6 +15,7 @@ import { ESCAPE_ERROR_MESSAGE, isEscapeInterruptError } from "../interrupt/inter
 export interface StdioServerEvents {
   request: [request: JsonRpcRequest];
   parseError: [error: Error];
+  close: [];
 }
 
 export interface StdioJsonRpcServerOptions {
@@ -42,6 +43,9 @@ export class StdioJsonRpcServer extends EventEmitter<StdioServerEvents> {
           error instanceof Error ? error : new Error(String(error))
         );
       }
+    });
+    this.rl.on("close", () => {
+      this.emit("close");
     });
   }
 
@@ -84,6 +88,7 @@ export interface StdioRpcRuntimeOptions {
 export class StdioRpcRuntime {
   private readonly exit: (code: number) => void;
   private pending: Promise<void> = Promise.resolve();
+  private closed = false;
 
   constructor(
     private readonly transport: StdioJsonRpcServer,
@@ -102,10 +107,26 @@ export class StdioRpcRuntime {
           throw error;
         });
     });
+    this.transport.on("close", () => {
+      void this.close();
+    });
   }
 
   async triggerPhysicalEscape(meta?: JsonRpcRequest["meta"]): Promise<void> {
     await this.runtime.endTurn.trigger(meta);
+  }
+
+  async close(): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+
+    this.closed = true;
+    try {
+      await this.runtime.endTurn.close();
+    } finally {
+      this.transport.close();
+    }
   }
 
   private async handleRequest(request: JsonRpcRequest): Promise<void> {
@@ -123,9 +144,8 @@ export class StdioRpcRuntime {
       }
 
       if (request.method === "close") {
-        await this.runtime.endTurn.close();
+        await this.close();
         this.transport.sendSuccess(request.id, null);
-        this.transport.close();
         this.exit(0);
         return;
       }
