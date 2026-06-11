@@ -5215,15 +5215,49 @@ namespace ComputerUse.NativeHost
 
                 return new CaptureSuppression(delegate
                 {
-                    if (IsDisposed || !wasVisible)
+                    RestoreAfterScreenCapture(wasVisible, previousOpacity);
+                });
+            }
+
+            private void RestoreAfterScreenCapture(bool wasVisible, double previousOpacity)
+            {
+                if (!wasVisible)
+                {
+                    return;
+                }
+
+                try
+                {
+                    var restore = new Action(delegate
+                    {
+                        if (IsDisposed)
+                        {
+                            return;
+                        }
+
+                        Opacity = previousOpacity;
+                        RepositionNearCursor();
+                        Show();
+                        RefreshLayeredWindow();
+                    });
+
+                    if (IsDisposed)
                     {
                         return;
                     }
 
-                    Opacity = previousOpacity;
-                    RepositionNearCursor();
-                    Show();
-                });
+                    if (InvokeRequired)
+                    {
+                        BeginInvoke(restore);
+                    }
+                    else
+                    {
+                        restore();
+                    }
+                }
+                catch
+                {
+                }
             }
 
             protected override void OnPaint(System.Windows.Forms.PaintEventArgs e)

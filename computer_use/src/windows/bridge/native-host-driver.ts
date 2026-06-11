@@ -66,6 +66,7 @@ export interface NativeHostBridgeOptions {
   dotnetExecutable?: string;
   driverName?: string;
   fallback?: NativeBridge;
+  idleHostTimeoutMs?: number;
   projectPath?: string;
   requestTimeoutMs?: number;
   sourcePath?: string;
@@ -100,6 +101,7 @@ export class NativeHostBridge implements NativeBridge {
   private readonly buildTimeoutMs: number;
   private readonly dotnetExecutable?: string;
   private readonly fallback: NativeBridge;
+  private readonly idleHostTimeoutMs: number;
   private readonly projectPath: string;
   private readonly requestTimeoutMs: number;
   private readonly sourcePath: string;
@@ -109,6 +111,7 @@ export class NativeHostBridge implements NativeBridge {
   private fallbackTurnStarted = false;
   private hostProcess?: ChildProcessWithoutNullStreams;
   private hostStartup?: Promise<ChildProcessWithoutNullStreams>;
+  private idleHostCleanupTimer?: ReturnType<typeof setTimeout>;
   private lifecycleError?: Error;
   private pendingRequests = new Map<number, PendingRequest>();
   private queued: Promise<void> = Promise.resolve();
@@ -122,6 +125,7 @@ export class NativeHostBridge implements NativeBridge {
     this.dotnetExecutable = options.dotnetExecutable ?? process.env.COMPUTER_USE_DOTNET_PATH;
     this.driverName = options.driverName ?? "native-host";
     this.fallback = options.fallback ?? new PowerShellNativeBridge();
+    this.idleHostTimeoutMs = options.idleHostTimeoutMs ?? readIdleHostTimeoutMs(process.env.COMPUTER_USE_NATIVE_HOST_IDLE_TIMEOUT_MS);
     this.projectPath = options.projectPath ?? DEFAULT_PROJECT_PATH;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 20_000;
     this.sourcePath = options.sourcePath ?? DEFAULT_PROGRAM_PATH;
@@ -339,10 +343,15 @@ export class NativeHostBridge implements NativeBridge {
       throw this.lifecycleError;
     }
 
+    this.clearIdleHostCleanupTimer();
     await this.enqueue(async () => {
-      await this.ensureTurnStarted();
-      await this.updateOperationStatus(method, payload);
-      await this.invokeHost(method, payload);
+      try {
+        await this.ensureTurnStarted();
+        await this.updateOperationStatus(method, payload);
+        await this.invokeHost(method, payload);
+      } finally {
+        this.scheduleIdleHostCleanup();
+      }
     });
   }
 
@@ -354,10 +363,15 @@ export class NativeHostBridge implements NativeBridge {
       throw this.lifecycleError;
     }
 
+    this.clearIdleHostCleanupTimer();
     return await this.enqueue(async () => {
-      await this.ensureTurnStarted();
-      await this.updateOperationStatus(method, payload);
-      return await this.invokeHost(method, payload) as TResult;
+      try {
+        await this.ensureTurnStarted();
+        await this.updateOperationStatus(method, payload);
+        return await this.invokeHost(method, payload) as TResult;
+      } finally {
+        this.scheduleIdleHostCleanup();
+      }
     });
   }
 
@@ -587,6 +601,7 @@ export class NativeHostBridge implements NativeBridge {
   }
 
   private async ensureHostProcess(): Promise<ChildProcessWithoutNullStreams> {
+    this.clearIdleHostCleanupTimer();
     if (this.hostProcess && !this.hostProcess.killed) {
       return this.hostProcess;
     }
@@ -733,6 +748,7 @@ export class NativeHostBridge implements NativeBridge {
   }
 
   private disposeHostProcess(): void {
+    this.clearIdleHostCleanupTimer();
     const processHandle = this.hostProcess;
     this.hostProcess = undefined;
     this.hostStartup = undefined;
@@ -741,6 +757,27 @@ export class NativeHostBridge implements NativeBridge {
     if (processHandle && !processHandle.killed) {
       processHandle.kill();
     }
+  }
+
+  private scheduleIdleHostCleanup(): void {
+    if (this.idleHostTimeoutMs <= 0 || !this.hostProcess || this.hostProcess.killed) {
+      return;
+    }
+
+    this.clearIdleHostCleanupTimer();
+    this.idleHostCleanupTimer = setTimeout(() => {
+      this.disposeHostProcess();
+    }, this.idleHostTimeoutMs);
+    this.idleHostCleanupTimer.unref?.();
+  }
+
+  private clearIdleHostCleanupTimer(): void {
+    if (!this.idleHostCleanupTimer) {
+      return;
+    }
+
+    clearTimeout(this.idleHostCleanupTimer);
+    this.idleHostCleanupTimer = undefined;
   }
 }
 
@@ -891,6 +928,19 @@ function combineFallbackFailure(primaryError: Error, fallbackError: unknown): Er
   return new Error(
     `${primaryError.message}\nFallback failed: ${normalizedFallback.message}`
   );
+}
+
+function readIdleHostTimeoutMs(value: string | undefined): number {
+  if (value === undefined || value.trim().length === 0) {
+    return 5_000;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 5_000;
+  }
+
+  return parsed;
 }
 
 function normalizeCompletionStatus(_status: Record<string, unknown>): Record<string, unknown> {
