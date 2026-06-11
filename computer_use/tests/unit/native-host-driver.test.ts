@@ -603,6 +603,26 @@ test("NativeHostBridge resetTurn immediately disposes the host process", () => {
   assert.equal((bridge as any).turnStarted, false);
 });
 
+test("NativeHostBridge disposes an idle host process without waiting for endTurn", async () => {
+  const bridge = new NativeHostBridge({
+    fallback: new NullNativeBridge(),
+    idleHostTimeoutMs: 20
+  });
+  const fakeChild = createHungChild();
+
+  (bridge as any).hostProcess = fakeChild;
+  (bridge as any).ensureTurnStarted = async () => {};
+  (bridge as any).invokeHost = async (method: string) => method === "listWindows"
+    ? []
+    : null;
+
+  await bridge.listWindows();
+  await waitFor(() => fakeChild.killCalled);
+
+  assert.equal((bridge as any).hostProcess, undefined);
+  assert.equal((bridge as any).turnStarted, false);
+});
+
 function createHungChild() {
   return {
     killed: false,

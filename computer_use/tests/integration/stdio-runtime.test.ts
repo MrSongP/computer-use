@@ -249,6 +249,35 @@ test("stdio runtime resets an unfinished turn before starting a different turn",
   assert.equal(bridge.getRecordedInvocations()[2]?.payload, "stale_turn");
 });
 
+test("stdio runtime closes the active turn when the input stream ends", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const scaffold = createScaffoldRuntime();
+  const transport = new StdioJsonRpcServer({ input, output });
+  const runtime = new StdioRpcRuntime(transport, scaffold.dispatcher, scaffold.runtime);
+  runtime.start();
+
+  const responses = collectOutputLines(output, 1);
+  input.write(
+    `${JSON.stringify({
+      id: 31,
+      method: "list_windows",
+      params: {},
+      meta: { codexTurnMetadata: { session_id: "session-stdin-close", turn_id: "turn-one" } }
+    })}\n`
+  );
+  await responses;
+
+  input.end();
+  const bridge = scaffold.runtime.nativeBridge as MockNativeBridge;
+  await waitFor(() => bridge.getRecordedInvocations().some((entry) => entry.name === "endTurn"));
+
+  assert.deepEqual(
+    bridge.getRecordedInvocations().map((entry) => entry.name),
+    ["beginTurn", "listWindows", "endTurn"]
+  );
+});
+
 async function collectOutputLines(stream: PassThrough, expectedCount: number): Promise<string[]> {
   const lines: string[] = [];
   let buffer = "";
@@ -290,4 +319,16 @@ async function collectOutputLines(stream: PassThrough, expectedCount: number): P
     stream.on("data", onData);
     stream.on("error", onError);
   });
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  assert.fail("condition was not met in time");
 }

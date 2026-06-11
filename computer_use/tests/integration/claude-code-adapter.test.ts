@@ -299,6 +299,42 @@ test("claude code MCP server returns structuredContent for tool errors", async (
   }
 });
 
+test("claude code MCP server closes the active turn when the input stream ends", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const instance = createClaudeMcpServer({
+    useMockBridge: true,
+    input,
+    output
+  }).start();
+
+  const responses = collectOutputLines(output, 1);
+  input.write(`${JSON.stringify({
+    jsonrpc: "2.0",
+    id: 41,
+    method: "tools/call",
+    params: {
+      name: "list_windows",
+      arguments: {
+        claudeTurnMetadata: {
+          session_id: "mcp-stdin-close",
+          turn_id: "turn-one"
+        }
+      }
+    }
+  })}\n`);
+  await responses;
+
+  input.end();
+  const bridge = instance.scaffold.runtime.nativeBridge as any;
+  await waitFor(() => bridge.getRecordedInvocations().some((entry: any) => entry.name === "endTurn"));
+
+  assert.deepEqual(
+    bridge.getRecordedInvocations().map((entry: any) => entry.name),
+    ["beginTurn", "listWindows", "endTurn"]
+  );
+});
+
 async function countActionDirs(traceDir: string, sessionId: string, turnId: string): Promise<number> {
   const turnDir = path.join(traceDir, sessionId, turnId);
   const entries = await readdir(turnDir);
@@ -357,4 +393,16 @@ async function collectOutputLines(stream: PassThrough, expectedCount: number): P
     stream.on("data", onData);
     stream.on("error", onError);
   });
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  assert.fail("condition was not met in time");
 }
