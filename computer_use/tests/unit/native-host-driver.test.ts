@@ -185,7 +185,7 @@ test("NativeHostBridge updates cursor status before primary native-host calls", 
 
   assert.deepEqual(calls.map((entry) => entry.method), ["updateStatus", "listWindows"]);
   assert.deepEqual(calls[0]?.payload, {
-    title: "List Windows",
+    title: "Find Windows",
     detail: "Find targetable windows"
   });
   return;

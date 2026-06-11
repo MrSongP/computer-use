@@ -12,7 +12,7 @@ test("buildOperationStatus describes window activation in display text", () => {
       }
     }),
     {
-      title: "Activate Window",
+      title: "Focus Window",
       detail: "Bring QQ to the front"
     }
   );
@@ -36,6 +36,43 @@ test("buildOperationStatus keeps pointer coordinates visible for click actions",
     {
       title: "Click",
       detail: "Click Untitled - Notepad (120, 240)"
+    }
+  );
+});
+
+test("buildOperationStatus maps element clicks to the same short click label", () => {
+  assert.deepEqual(
+    buildOperationStatus("clickElement", {
+      params: {
+        window: {
+          id: 42,
+          app: "C:\\Windows\\System32\\notepad.exe",
+          title: "Untitled - Notepad"
+        },
+        element_index: 7
+      }
+    }),
+    {
+      title: "Click",
+      detail: "Click element #7 in Untitled - Notepad"
+    }
+  );
+});
+
+test("buildOperationStatus maps window state reads to a short look label", () => {
+  assert.deepEqual(
+    buildOperationStatus("getWindowState", {
+      params: {
+        window: {
+          id: 42,
+          app: "C:\\Windows\\System32\\notepad.exe",
+          title: "Untitled - Notepad"
+        }
+      }
+    }),
+    {
+      title: "View State",
+      detail: "Read Untitled - Notepad"
     }
   );
 });

@@ -10,7 +10,7 @@ export function buildOperationStatus(method: string, payload: Record<string, unk
   switch (method) {
     case "activateWindow":
       return {
-        title: "Activate Window",
+        title: "Focus Window",
         detail: `Bring ${describeWindow(readWindow(payload.window))} to the front`
       };
     case "sendPointerClick":
@@ -40,17 +40,17 @@ export function buildOperationStatus(method: string, payload: Record<string, unk
       };
     case "listWindows":
       return {
-        title: "List Windows",
+        title: "Find Windows",
         detail: "Find targetable windows"
       };
     case "getWindow":
       return {
-        title: "Get Window",
+        title: "Resolve Window",
         detail: "Resolve the target window"
       };
     case "listApps":
       return {
-        title: "List App",
+        title: "Find Apps",
         detail: "Find launchable apps and open windows"
       };
     case "launchApp":
@@ -60,12 +60,12 @@ export function buildOperationStatus(method: string, payload: Record<string, unk
       };
     case "getWindowState":
       return {
-        title: "Get Window State",
+        title: "View State",
         detail: `Read ${describeWindow(readWindow(readParams(payload).window))}`
       };
     case "clickElement":
       return {
-        title: "Click Element",
+        title: "Click",
         detail: `Click ${describeElement(readParams(payload))}`
       };
     case "setValue":
@@ -75,7 +75,7 @@ export function buildOperationStatus(method: string, payload: Record<string, unk
       };
     case "performSecondaryAction":
       return {
-        title: "Perform Action",
+        title: "Action",
         detail: `Run ${describeAction(readParams(payload).action)}`
       };
     case "getVirtualScreenMetrics":

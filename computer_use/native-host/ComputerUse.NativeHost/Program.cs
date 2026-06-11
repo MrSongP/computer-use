@@ -5099,23 +5099,43 @@ namespace ComputerUse.NativeHost
         {
             private const int MarginToCursor = 18;
             private const int ScreenMargin = 8;
-            private const int MinimumWidth = 260;
-            private const int MaximumWidth = 680;
-            private const int CapsuleHeight = 46;
-            private const int HorizontalPadding = 18;
-            private const int DotSize = 7;
-            private const int TextGap = 8;
+            private const int MinimumWidth = 132;
+            private const int CapsuleHeight = 44;
+            private const int HorizontalPadding = 22;
+            private const int DotSize = 6;
+            private const int DotTextGap = 4;
+            private const int TextGap = 14;
+            private const int TextWidthSlack = 28;
             private const int IdleFadeAfterMs = 30000;
             private const double FullOpacity = 1.0;
             private const double FadeStep = 0.055;
             private const uint WdaExcludeFromCapture = 0x00000011;
             private const int DwmaWindowCornerPreference = 33;
-            private const int DwmaSystemBackdropType = 38;
             private const int DwmWindowCornerPreferenceRound = 2;
-            private const int DwmSystemBackdropTransientWindow = 3;
             private readonly System.Windows.Forms.Timer followTimer;
-            private readonly Font titleFont = CreateUIFont(9.4f, FontStyle.Bold);
-            private readonly Font detailFont = CreateUIFont(9.2f, FontStyle.Regular);
+            private readonly Font titleFont = CreateUIFont(
+                9.1f,
+                FontStyle.Bold,
+                new[] {
+                    "Inter Semi Bold",
+                    "Inter Semibold",
+                    "SF Pro Display Semibold",
+                    "Segoe UI Semibold",
+                    "Segoe UI Variable Text",
+                    "Segoe UI",
+                    "Arial"
+                });
+            private readonly Font detailFont = CreateUIFont(
+                9.1f,
+                FontStyle.Regular,
+                new[] {
+                    "PingFang SC",
+                    "Microsoft YaHei UI",
+                    "Microsoft YaHei",
+                    "Segoe UI Variable Text",
+                    "Segoe UI",
+                    "Arial"
+                });
             private string title = "computer_use";
             private DateTime lastUpdateUtc = DateTime.UtcNow;
             private DateTime lastDebugRenderSaveUtc = DateTime.MinValue;
@@ -5174,23 +5194,22 @@ namespace ComputerUse.NativeHost
 
             public void UpdateStatus(string nextTitle, string nextDetail)
             {
-                title = NormalizeDisplayText(nextTitle, "computer_use");
+                title = NormalizeStatusTitle(nextTitle);
                 lastUpdateUtc = DateTime.UtcNow;
                 Opacity = FullOpacity;
                 detail = NormalizeDisplayText(nextDetail, "正在操作应用");
 
-                var titleSize = System.Windows.Forms.TextRenderer.MeasureText(title + ":", titleFont);
-                var detailSize = System.Windows.Forms.TextRenderer.MeasureText(detail, detailFont);
+                var detailWidth = MeasureTextWidth(detail, detailFont);
                 var desiredWidth =
                     HorizontalPadding +
                     DotSize +
+                    DotTextGap +
+                    MeasureTextWidth(title, titleFont) +
                     TextGap +
-                    titleSize.Width +
-                    TextGap +
-                    detailSize.Width +
+                    detailWidth +
                     HorizontalPadding;
 
-                Width = Math.Max(MinimumWidth, Math.Min(MaximumWidth, desiredWidth));
+                Width = Math.Max(MinimumWidth, Math.Min(GetMaximumOverlayWidth(), desiredWidth));
                 Height = CapsuleHeight;
                 RebuildRegion();
                 RepositionNearCursor();
@@ -5262,8 +5281,12 @@ namespace ComputerUse.NativeHost
 
             protected override void OnPaint(System.Windows.Forms.PaintEventArgs e)
             {
-                base.OnPaint(e);
-                DrawOverlay(e.Graphics);
+                // The visible surface is supplied by UpdateLayeredWindow. Letting
+                // WinForms paint too can leave a rectangular backing layer.
+            }
+
+            protected override void OnPaintBackground(System.Windows.Forms.PaintEventArgs e)
+            {
             }
 
             protected override void OnResize(EventArgs e)
@@ -5299,7 +5322,6 @@ namespace ComputerUse.NativeHost
                 }
 
                 TrySetDwmAttribute(DwmaWindowCornerPreference, DwmWindowCornerPreferenceRound);
-                TrySetDwmAttribute(DwmaSystemBackdropType, DwmSystemBackdropTransientWindow);
             }
 
             private void TrySetDwmAttribute(int attribute, int value)
@@ -5378,7 +5400,8 @@ namespace ComputerUse.NativeHost
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 graphics.CompositingQuality = CompositingQuality.HighQuality;
                 graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
 
                 var bounds = new Rectangle(1, 1, Width - 2, Height - 2);
                 var palette = ResolvePalette();
@@ -5406,32 +5429,29 @@ namespace ComputerUse.NativeHost
                     graphics.FillEllipse(dotBrush, dotX, dotY, DotSize, DotSize);
                 }
 
-                var textX = dotX + DotSize + TextGap;
-                var titleText = title + ":";
-                var titleSize = System.Windows.Forms.TextRenderer.MeasureText(titleText, titleFont);
-                var detailSize = System.Windows.Forms.TextRenderer.MeasureText(detail, detailFont);
-                var textHeight = Math.Max(titleSize.Height, detailSize.Height);
+                var textX = dotX + DotSize + DotTextGap;
+                var textHeight = (int)Math.Ceiling(Math.Max(
+                    titleFont.GetHeight(graphics),
+                    detailFont.GetHeight(graphics))) + 2;
                 var textY = Math.Max(0, (Height - textHeight) / 2);
-                graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+
+                var titleWidth = MeasureTextWidth(title, titleFont);
+                var titleRect = new RectangleF(textX, textY, titleWidth + 2, textHeight);
+                var detailX = titleRect.Right + TextGap;
+                var detailRect = new RectangleF(
+                    detailX,
+                    textY,
+                    Math.Max(1, Width - detailX - HorizontalPadding),
+                    textHeight
+                );
+
                 using (var titleBrush = new SolidBrush(palette.TitleText))
                 using (var detailBrush = new SolidBrush(palette.DetailText))
-                using (var format = new StringFormat(StringFormatFlags.NoWrap))
+                using (var titleFormat = CreateTextFormat(StringAlignment.Near))
+                using (var detailFormat = CreateTextFormat(StringAlignment.Near))
                 {
-                    format.Alignment = StringAlignment.Near;
-                    format.LineAlignment = StringAlignment.Center;
-                    format.Trimming = StringTrimming.EllipsisCharacter;
-
-                    var titleRect = new RectangleF(textX, textY, titleSize.Width + 2, textHeight);
-                    graphics.DrawString(titleText, titleFont, titleBrush, titleRect, format);
-
-                    var detailX = (int)Math.Ceiling(titleRect.Right) + TextGap;
-                    var detailRect = new RectangleF(
-                        detailX,
-                        textY,
-                        Math.Max(1, Width - detailX - HorizontalPadding),
-                        textHeight
-                    );
-                    graphics.DrawString(detail, detailFont, detailBrush, detailRect, format);
+                    graphics.DrawString(title, titleFont, titleBrush, titleRect, titleFormat);
+                    graphics.DrawString(detail, detailFont, detailBrush, detailRect, detailFormat);
                 }
             }
 
@@ -5677,6 +5697,13 @@ namespace ComputerUse.NativeHost
                 Location = new System.Drawing.Point(x, y);
             }
 
+            private static int GetMaximumOverlayWidth()
+            {
+                var cursor = System.Windows.Forms.Cursor.Position;
+                var area = System.Windows.Forms.Screen.FromPoint(cursor).WorkingArea;
+                return Math.Max(MinimumWidth, area.Width - (ScreenMargin * 2));
+            }
+
             private void TickOverlay()
             {
                 RepositionNearCursor();
@@ -5719,9 +5746,7 @@ namespace ComputerUse.NativeHost
 
             private static GlassPalette ResolvePalette()
             {
-                return SystemColors.Window.GetBrightness() < 0.45f
-                    ? GlassPalette.Dark
-                    : GlassPalette.Light;
+                return GlassPalette.Light;
             }
 
             private static bool IsStatusOverlayDebugEnabled()
@@ -5749,18 +5774,18 @@ namespace ComputerUse.NativeHost
             {
                 public static readonly GlassPalette Light = new GlassPalette(
                     Color.FromArgb(32, 15, 23, 42),
-                    Color.FromArgb(34, 255, 255, 255),
-                    Color.FromArgb(16, 218, 232, 255),
-                    Color.FromArgb(178, 255, 255, 255),
-                    Color.FromArgb(112, 147, 197, 253),
+                    Color.FromArgb(232, 255, 255, 255),
+                    Color.FromArgb(214, 245, 248, 252),
+                    Color.FromArgb(210, 255, 255, 255),
+                    Color.FromArgb(84, 147, 197, 253),
                     Color.FromArgb(150, 255, 255, 255),
                     Color.FromArgb(34, 99, 102, 241),
-                    Color.FromArgb(14, 255, 255, 255),
-                    Color.FromArgb(62, 255, 255, 255),
-                    Color.FromArgb(18, 125, 211, 252),
-                    Color.FromArgb(12, 244, 114, 182),
+                    Color.FromArgb(8, 255, 255, 255),
+                    Color.FromArgb(36, 255, 255, 255),
+                    Color.FromArgb(10, 125, 211, 252),
+                    Color.FromArgb(8, 244, 114, 182),
                     Color.FromArgb(255, 29, 78, 216),
-                    Color.FromArgb(255, 30, 41, 59),
+                    Color.FromArgb(255, 0, 0, 0),
                     Color.FromArgb(255, 37, 99, 235),
                     Color.FromArgb(76, 96, 165, 250)
                 );
@@ -5778,7 +5803,7 @@ namespace ComputerUse.NativeHost
                     Color.FromArgb(16, 125, 211, 252),
                     Color.FromArgb(10, 244, 114, 182),
                     Color.FromArgb(255, 147, 197, 253),
-                    Color.FromArgb(255, 226, 232, 240),
+                    Color.FromArgb(255, 248, 250, 252),
                     Color.FromArgb(255, 96, 165, 250),
                     Color.FromArgb(86, 147, 197, 253)
                 );
@@ -5839,16 +5864,184 @@ namespace ComputerUse.NativeHost
                 return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
             }
 
-            private static Font CreateUIFont(float size, FontStyle style)
+            private static string NormalizeStatusTitle(string value)
             {
-                try
+                var normalized = NormalizeDisplayText(value, "computer_use")
+                    .Replace("-", "_")
+                    .Replace(" ", "_")
+                    .Trim()
+                    .ToLowerInvariant();
+
+                switch (normalized)
                 {
-                    return new Font("Microsoft YaHei UI", size, style, GraphicsUnit.Point);
+                    case "click":
+                    case "click_element":
+                    case "clickelement":
+                    case "send_pointer_click":
+                    case "sendpointerclick":
+                        return "Click";
+                    case "get_window_state":
+                    case "getwindowstate":
+                    case "view_state":
+                    case "viewstate":
+                    case "look":
+                    case "view":
+                    case "watch":
+                        return "View State";
+                    case "activate_window":
+                    case "activatewindow":
+                    case "focus_window":
+                    case "focuswindow":
+                    case "focus":
+                        return "Focus Window";
+                    case "type_text":
+                    case "typetext":
+                    case "send_text":
+                    case "sendtext":
+                    case "type":
+                        return "Type Text";
+                    case "press_key":
+                    case "presskey":
+                    case "send_keyboard_inputs":
+                    case "sendkeyboardinputs":
+                    case "key":
+                        return "Press Key";
+                    case "scroll":
+                    case "send_pointer_scroll":
+                    case "sendpointerscroll":
+                        return "Scroll";
+                    case "drag":
+                    case "send_pointer_drag":
+                    case "sendpointerdrag":
+                        return "Drag";
+                    case "list_windows":
+                    case "listwindows":
+                    case "find":
+                    case "find_windows":
+                    case "findwindows":
+                        return "Find Windows";
+                    case "get_window":
+                    case "getwindow":
+                    case "window":
+                    case "resolve_window":
+                    case "resolvewindow":
+                        return "Resolve Window";
+                    case "list_apps":
+                    case "listapps":
+                    case "apps":
+                    case "find_apps":
+                    case "findapps":
+                        return "Find Apps";
+                    case "launch_app":
+                    case "launchapp":
+                    case "launch":
+                        return "Launch App";
+                    case "set_value":
+                    case "setvalue":
+                    case "set":
+                        return "Set Value";
+                    case "perform_secondary_action":
+                    case "performsecondaryaction":
+                    case "action":
+                        return "Action";
+                    case "screen":
+                    case "get_virtual_screen_metrics":
+                    case "getvirtualscreenmetrics":
+                        return "Screen";
+                    case "done":
+                    case "complete":
+                        return "Done";
+                    case "computer_use":
+                    case "computeruse":
+                        return "Work";
+                    default:
+                        return ToCompactTitle(value);
                 }
-                catch
+            }
+
+            private static string ToCompactTitle(string value)
+            {
+                var normalized = NormalizeDisplayText(value, "Work")
+                    .Replace("-", " ")
+                    .Replace("_", " ");
+                var builder = new StringBuilder();
+                var previousWasSpace = true;
+                var wordCount = 0;
+
+                for (var i = 0; i < normalized.Length; i += 1)
                 {
-                    return new Font(SystemFonts.MessageBoxFont.FontFamily, size, style, GraphicsUnit.Point);
+                    var character = normalized[i];
+                    if (char.IsWhiteSpace(character))
+                    {
+                        if (!previousWasSpace && wordCount < 2)
+                        {
+                            builder.Append(' ');
+                        }
+                        previousWasSpace = true;
+                        continue;
+                    }
+
+                    if (previousWasSpace)
+                    {
+                        wordCount += 1;
+                        if (wordCount > 2)
+                        {
+                            break;
+                        }
+                        builder.Append(char.ToUpperInvariant(character));
+                    }
+                    else
+                    {
+                        builder.Append(char.ToLowerInvariant(character));
+                    }
+
+                    previousWasSpace = false;
                 }
+
+                var compact = builder.ToString().Trim();
+                return compact.Length > 0 ? compact : "Work";
+            }
+
+            private static int MeasureTextWidth(string value, Font font)
+            {
+                using (var bitmap = new Bitmap(1, 1, PixelFormat.Format32bppPArgb))
+                using (var graphics = Graphics.FromImage(bitmap))
+                using (var format = CreateTextFormat(StringAlignment.Near))
+                {
+                    graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+                    return (int)Math.Ceiling(graphics.MeasureString(value, font, int.MaxValue, format).Width) + TextWidthSlack;
+                }
+            }
+
+            private static StringFormat CreateTextFormat(StringAlignment alignment)
+            {
+                var format = new StringFormat(StringFormatFlags.NoWrap);
+                format.Alignment = alignment;
+                format.LineAlignment = StringAlignment.Center;
+                format.Trimming = StringTrimming.EllipsisCharacter;
+                return format;
+            }
+
+            private static Font CreateUIFont(float size, FontStyle style, string[] candidates)
+            {
+                for (var i = 0; i < candidates.Length; i += 1)
+                {
+                    try
+                    {
+                        var font = new Font(candidates[i], size, style, GraphicsUnit.Point);
+                        if (string.Equals(font.FontFamily.Name, candidates[i], StringComparison.OrdinalIgnoreCase))
+                        {
+                            return font;
+                        }
+
+                        font.Dispose();
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                return new Font(SystemFonts.MessageBoxFont.FontFamily, size, style, GraphicsUnit.Point);
             }
 
             [DllImport("user32.dll", SetLastError = true)]
