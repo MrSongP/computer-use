@@ -1,6 +1,6 @@
 ---
 name: computer-use
-description: Control Windows apps from Codex
+description: Control Windows apps
 ---
 
 # Computer Use
