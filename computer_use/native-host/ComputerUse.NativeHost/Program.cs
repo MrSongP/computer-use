@@ -428,7 +428,7 @@ namespace ComputerUse.NativeHost
         {
             if (statusOverlay != null)
             {
-                statusOverlay.Hide();
+                statusOverlay.UpdateStatus("computer_use", "\u6b63\u5728\u64cd\u4f5c\u5e94\u7528");
             }
         }
 
@@ -478,7 +478,7 @@ namespace ComputerUse.NativeHost
             EnsureTurnInitialized();
             EnsureStatusOverlay();
             var title = ReadOptionalString(payload, "title") ?? "computer_use";
-            var detail = ReadOptionalString(payload, "detail") ?? "正在操作应用";
+            var detail = ReadOptionalString(payload, "detail") ?? "\u6b63\u5728\u64cd\u4f5c\u5e94\u7528";
             if (statusOverlay != null)
             {
                 statusOverlay.UpdateStatus(title, detail);
@@ -5039,10 +5039,18 @@ namespace ComputerUse.NativeHost
 
         private void Run()
         {
+            var savedDpiContext = SetThreadDpiAwarenessContext(DpiAwarenessContextPerMonitorAwareV2);
+            if (savedDpiContext == IntPtr.Zero)
+            {
+                savedDpiContext = SetThreadDpiAwarenessContext(DpiAwarenessContextPerMonitorAware);
+            }
+
             try
             {
+                System.Windows.Forms.Application.SetHighDpiMode(System.Windows.Forms.HighDpiMode.PerMonitorV2);
                 System.Windows.Forms.Application.EnableVisualStyles();
                 form = new StatusForm();
+                form.HandleCreated += delegate { started.Set(); };
                 form.Shown += delegate { started.Set(); };
                 System.Windows.Forms.Application.Run(form);
             }
@@ -5050,6 +5058,13 @@ namespace ComputerUse.NativeHost
             {
                 startupError = error;
                 started.Set();
+            }
+            finally
+            {
+                if (savedDpiContext != IntPtr.Zero)
+                {
+                    SetThreadDpiAwarenessContext(savedDpiContext);
+                }
             }
         }
 
@@ -5074,6 +5089,12 @@ namespace ComputerUse.NativeHost
         [DllImport("user32.dll", SetLastError = false)]
         private static extern bool PostMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
 
+        private static readonly IntPtr DpiAwarenessContextPerMonitorAwareV2 = new IntPtr(-4);
+        private static readonly IntPtr DpiAwarenessContextPerMonitorAware = new IntPtr(-3);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
+
         private sealed class CaptureSuppression : IDisposable
         {
             public static readonly IDisposable Empty = new CaptureSuppression(null);
@@ -5097,36 +5118,38 @@ namespace ComputerUse.NativeHost
 
         private sealed class StatusForm : System.Windows.Forms.Form
         {
-            private const int MarginToCursor = 18;
-            private const int ScreenMargin = 8;
-            private const int MinimumWidth = 132;
-            private const int CapsuleHeight = 44;
-            private const int HorizontalPadding = 22;
-            private const int DotSize = 6;
-            private const int DotTextGap = 4;
-            private const int TextGap = 14;
-            private const int TextWidthSlack = 28;
-            private const int IdleFadeAfterMs = 30000;
+            private const int MarginToCursorDip = 18;
+            private const int ScreenMarginDip = 8;
+            private const int MinimumWidthDip = 132;
+            private const int CapsuleHeightDip = 40;
+            private const int HorizontalPaddingDip = 18;
+            private const int DotSizeDip = 6;
+            private const int DotHaloSizeDip = 9;
+            private const int DotTextGapDip = 6;
+            private const int TextGapDip = 4;
+            private const int TextWidthSlackDip = 6;
             private const double FullOpacity = 1.0;
-            private const double FadeStep = 0.055;
             private const uint WdaExcludeFromCapture = 0x00000011;
             private const int DwmaWindowCornerPreference = 33;
             private const int DwmWindowCornerPreferenceRound = 2;
+            private const uint SwpNoSize = 0x0001;
+            private const uint SwpNoMove = 0x0002;
+            private const uint SwpNoActivate = 0x0010;
+            private static readonly IntPtr HwndTopMost = new IntPtr(-1);
             private readonly System.Windows.Forms.Timer followTimer;
             private readonly Font titleFont = CreateUIFont(
-                9.1f,
-                FontStyle.Bold,
+                9.5f,
+                FontStyle.Regular,
                 new[] {
                     "Inter Semi Bold",
                     "Inter Semibold",
-                    "SF Pro Display Semibold",
                     "Segoe UI Semibold",
                     "Segoe UI Variable Text",
                     "Segoe UI",
                     "Arial"
                 });
             private readonly Font detailFont = CreateUIFont(
-                9.1f,
+                9.5f,
                 FontStyle.Regular,
                 new[] {
                     "PingFang SC",
@@ -5137,11 +5160,8 @@ namespace ComputerUse.NativeHost
                     "Arial"
                 });
             private string title = "computer_use";
-            private DateTime lastUpdateUtc = DateTime.UtcNow;
-            private DateTime lastDebugRenderSaveUtc = DateTime.MinValue;
             private bool excludedFromCapture;
-            private double animationPhase;
-            private string detail = "正在操作应用";
+            private string detail = "\u6b63\u5728\u64cd\u4f5c\u5e94\u7528";
 
             public StatusForm()
             {
@@ -5151,7 +5171,7 @@ namespace ComputerUse.NativeHost
                 FormBorderStyle = System.Windows.Forms.FormBorderStyle.None;
                 Opacity = FullOpacity;
                 ShowInTaskbar = false;
-                Size = new System.Drawing.Size(MinimumWidth, CapsuleHeight);
+                Size = new System.Drawing.Size(ScalePx(MinimumWidthDip), ScalePx(CapsuleHeightDip));
                 StartPosition = System.Windows.Forms.FormStartPosition.Manual;
                 Text = OverlayWindowTitle;
                 TopMost = true;
@@ -5170,6 +5190,7 @@ namespace ComputerUse.NativeHost
                 base.OnHandleCreated(e);
                 ApplyCaptureExclusion();
                 ApplyNativeGlassHints();
+                EnsureTopMostLayer();
                 RefreshLayeredWindow();
             }
 
@@ -5195,22 +5216,23 @@ namespace ComputerUse.NativeHost
             public void UpdateStatus(string nextTitle, string nextDetail)
             {
                 title = NormalizeStatusTitle(nextTitle);
-                lastUpdateUtc = DateTime.UtcNow;
                 Opacity = FullOpacity;
-                detail = NormalizeDisplayText(nextDetail, "正在操作应用");
+                detail = NormalizeDisplayText(nextDetail, "\u6b63\u5728\u64cd\u4f5c\u5e94\u7528");
 
                 var detailWidth = MeasureTextWidth(detail, detailFont);
+                var titleWidth = MeasureTextWidth(title, titleFont);
                 var desiredWidth =
-                    HorizontalPadding +
-                    DotSize +
-                    DotTextGap +
-                    MeasureTextWidth(title, titleFont) +
-                    TextGap +
+                    ScalePx(HorizontalPaddingDip) +
+                    ScalePx(DotHaloSizeDip) +
+                    ScalePx(DotTextGapDip) +
+                    titleWidth +
+                    ScalePx(TextGapDip) +
                     detailWidth +
-                    HorizontalPadding;
+                    ScalePx(TextWidthSlackDip) +
+                    ScalePx(HorizontalPaddingDip);
 
-                Width = Math.Max(MinimumWidth, Math.Min(GetMaximumOverlayWidth(), desiredWidth));
-                Height = CapsuleHeight;
+                Width = Math.Max(ScalePx(MinimumWidthDip), Math.Min(GetMaximumOverlayWidth(), desiredWidth));
+                Height = ScalePx(CapsuleHeightDip);
                 RebuildRegion();
                 RepositionNearCursor();
                 RefreshLayeredWindow();
@@ -5219,6 +5241,7 @@ namespace ComputerUse.NativeHost
                 {
                     Show();
                 }
+                EnsureTopMostLayer();
             }
 
             public IDisposable SuspendForScreenCapture()
@@ -5257,6 +5280,7 @@ namespace ComputerUse.NativeHost
                         Opacity = previousOpacity;
                         RepositionNearCursor();
                         Show();
+                        EnsureTopMostLayer();
                         RefreshLayeredWindow();
                     });
 
@@ -5345,6 +5369,7 @@ namespace ComputerUse.NativeHost
 
                 using (var bitmap = new Bitmap(Width, Height, PixelFormat.Format32bppPArgb))
                 {
+                    bitmap.SetResolution(CurrentDpi, CurrentDpi);
                     using (var graphics = Graphics.FromImage(bitmap))
                     {
                         graphics.Clear(Color.Transparent);
@@ -5363,13 +5388,6 @@ namespace ComputerUse.NativeHost
                     return;
                 }
 
-                var now = DateTime.UtcNow;
-                if ((now - lastDebugRenderSaveUtc).TotalMilliseconds < 750)
-                {
-                    return;
-                }
-
-                lastDebugRenderSaveUtc = now;
                 try
                 {
                     var outputDir = Path.Combine(Environment.CurrentDirectory, ".tmp");
@@ -5401,57 +5419,58 @@ namespace ComputerUse.NativeHost
                 graphics.CompositingQuality = CompositingQuality.HighQuality;
                 graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+                graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
 
                 var bounds = new Rectangle(1, 1, Width - 2, Height - 2);
                 var palette = ResolvePalette();
-                DrawSoftShadow(graphics, bounds, palette);
-                using (var path = CreateRoundRectPath(bounds, 20))
+                DrawPremiumShadow(graphics, bounds, palette);
+                using (var path = CreateRoundRectPath(bounds, ScalePx(18)))
                 {
-                    DrawGlassBody(graphics, bounds, path, palette);
-                    DrawRefractionBands(graphics, bounds, path, palette);
-                    DrawNoise(graphics, bounds, path, palette);
-                    DrawFlowHighlight(graphics, bounds, path, palette);
-                    DrawEdgeHighlights(graphics, bounds, palette);
+                    DrawPremiumBody(graphics, bounds, path, palette);
                 }
 
                 DrawStatusContent(graphics, palette);
             }
 
-            private void DrawStatusContent(Graphics graphics, GlassPalette palette)
+            private void DrawStatusContent(Graphics graphics, OverlayPalette palette)
             {
-                var dotX = HorizontalPadding;
-                var dotY = (Height - DotSize) / 2;
+                var horizontalPadding = ScalePx(HorizontalPaddingDip);
+                var dotHaloSize = ScalePx(DotHaloSizeDip);
+                var dotSize = ScalePx(DotSizeDip);
+                var dotTextGap = ScalePx(DotTextGapDip);
+                var textGap = ScalePx(TextGapDip);
+                var dotX = horizontalPadding;
+                var haloY = (Height - dotHaloSize) / 2;
+                var dotY = (Height - dotSize) / 2;
                 using (var dotBrush = new SolidBrush(palette.Dot))
                 using (var dotGlow = new SolidBrush(palette.DotGlow))
                 {
-                    graphics.FillEllipse(dotGlow, dotX - 4, dotY - 4, DotSize + 8, DotSize + 8);
-                    graphics.FillEllipse(dotBrush, dotX, dotY, DotSize, DotSize);
+                    graphics.FillEllipse(dotGlow, dotX, haloY, dotHaloSize, dotHaloSize);
+                    graphics.FillEllipse(dotBrush, dotX + ((dotHaloSize - dotSize) / 2.0f), dotY, dotSize, dotSize);
                 }
 
-                var textX = dotX + DotSize + DotTextGap;
+                var textX = dotX + dotHaloSize + dotTextGap;
                 var textHeight = (int)Math.Ceiling(Math.Max(
                     titleFont.GetHeight(graphics),
-                    detailFont.GetHeight(graphics))) + 2;
+                    detailFont.GetHeight(graphics))) + ScalePx(2);
                 var textY = Math.Max(0, (Height - textHeight) / 2);
 
                 var titleWidth = MeasureTextWidth(title, titleFont);
-                var titleRect = new RectangleF(textX, textY, titleWidth + 2, textHeight);
-                var detailX = titleRect.Right + TextGap;
+                var titleRect = new RectangleF(textX, textY, titleWidth, textHeight);
+                var detailX = titleRect.Right + textGap;
                 var detailRect = new RectangleF(
                     detailX,
                     textY,
-                    Math.Max(1, Width - detailX - HorizontalPadding),
+                    Math.Max(1, Width - detailX - horizontalPadding),
                     textHeight
                 );
 
                 using (var titleBrush = new SolidBrush(palette.TitleText))
                 using (var detailBrush = new SolidBrush(palette.DetailText))
-                using (var titleFormat = CreateTextFormat(StringAlignment.Near))
-                using (var detailFormat = CreateTextFormat(StringAlignment.Near))
+                using (var format = CreateTextFormat())
                 {
-                    graphics.DrawString(title, titleFont, titleBrush, titleRect, titleFormat);
-                    graphics.DrawString(detail, detailFont, detailBrush, detailRect, detailFormat);
+                    graphics.DrawString(title, titleFont, titleBrush, titleRect, format);
+                    graphics.DrawString(detail, detailFont, detailBrush, detailRect, format);
                 }
             }
 
@@ -5547,16 +5566,31 @@ namespace ComputerUse.NativeHost
                 return bitmapHandle;
             }
 
-            private static void DrawSoftShadow(Graphics graphics, Rectangle bounds, GlassPalette palette)
+            private void DrawPremiumShadow(Graphics graphics, Rectangle bounds, OverlayPalette palette)
             {
-                using (var shadowPath = CreateRoundRectPath(new Rectangle(3, 5, bounds.Width - 4, bounds.Height - 5), 18))
-                using (var shadowBrush = new SolidBrush(palette.Shadow))
+                using (var broadPath = CreateRoundRectPath(
+                    new Rectangle(
+                        ScalePx(5),
+                        ScalePx(8),
+                        bounds.Width - ScalePx(10),
+                        bounds.Height - ScalePx(11)),
+                    ScalePx(18)))
+                using (var broadBrush = new SolidBrush(palette.ShadowBroad))
+                using (var closePath = CreateRoundRectPath(
+                    new Rectangle(
+                        ScalePx(3),
+                        ScalePx(4),
+                        bounds.Width - ScalePx(6),
+                        bounds.Height - ScalePx(7)),
+                    ScalePx(18)))
+                using (var closeBrush = new SolidBrush(palette.ShadowClose))
                 {
-                    graphics.FillPath(shadowBrush, shadowPath);
+                    graphics.FillPath(broadBrush, broadPath);
+                    graphics.FillPath(closeBrush, closePath);
                 }
             }
 
-            private static void DrawGlassBody(Graphics graphics, Rectangle bounds, GraphicsPath path, GlassPalette palette)
+            private void DrawPremiumBody(Graphics graphics, Rectangle bounds, GraphicsPath path, OverlayPalette palette)
             {
                 using (var background = new LinearGradientBrush(
                     bounds,
@@ -5564,9 +5598,16 @@ namespace ComputerUse.NativeHost
                     palette.FillBottom,
                     LinearGradientMode.Vertical))
                 using (var border = new Pen(palette.OuterBorder, 1.0f))
+                using (var innerBorder = new Pen(palette.InnerBorder, 1.0f))
                 {
                     graphics.FillPath(background, path);
                     graphics.DrawPath(border, path);
+                    using (var innerPath = CreateRoundRectPath(
+                        new Rectangle(bounds.Left + 1, bounds.Top + 1, bounds.Width - 2, bounds.Height - 2),
+                        ScalePx(17)))
+                    {
+                        graphics.DrawPath(innerBorder, innerPath);
+                    }
                 }
             }
 
@@ -5595,77 +5636,6 @@ namespace ComputerUse.NativeHost
                 }
             }
 
-            private static void DrawRefractionBands(Graphics graphics, Rectangle bounds, GraphicsPath path, GlassPalette palette)
-            {
-                var state = graphics.Save();
-                graphics.SetClip(path);
-                using (var coolBand = new LinearGradientBrush(
-                    new Rectangle(bounds.Left, bounds.Top, Math.Max(1, bounds.Width), Math.Max(1, bounds.Height)),
-                    palette.RefractionCool,
-                    Color.FromArgb(0, palette.RefractionCool),
-                    LinearGradientMode.ForwardDiagonal))
-                using (var warmBand = new LinearGradientBrush(
-                    new Rectangle(bounds.Left, bounds.Top, Math.Max(1, bounds.Width), Math.Max(1, bounds.Height)),
-                    Color.FromArgb(0, palette.RefractionWarm),
-                    palette.RefractionWarm,
-                    LinearGradientMode.BackwardDiagonal))
-                {
-                    graphics.FillPath(coolBand, path);
-                    graphics.FillPath(warmBand, path);
-                }
-                graphics.Restore(state);
-            }
-
-            private static void DrawNoise(Graphics graphics, Rectangle bounds, GraphicsPath path, GlassPalette palette)
-            {
-                var state = graphics.Save();
-                graphics.SetClip(path);
-                using (var brush = new SolidBrush(palette.Noise))
-                {
-                    for (var y = bounds.Top + 3; y < bounds.Bottom - 2; y += 4)
-                    {
-                        for (var x = bounds.Left + 3; x < bounds.Right - 2; x += 5)
-                        {
-                            if (((x * 17 + y * 31) & 7) == 0)
-                            {
-                                graphics.FillRectangle(brush, x, y, 1, 1);
-                            }
-                        }
-                    }
-                }
-                graphics.Restore(state);
-            }
-
-            private void DrawFlowHighlight(Graphics graphics, Rectangle bounds, GraphicsPath path, GlassPalette palette)
-            {
-                var state = graphics.Save();
-                graphics.SetClip(path);
-                var offset = (int)Math.Round((animationPhase % 1.0) * (bounds.Width + 160)) - 120;
-                var highlightBounds = new Rectangle(bounds.Left + offset, bounds.Top - 10, 120, bounds.Height + 20);
-                using (var highlight = new LinearGradientBrush(
-                    highlightBounds,
-                    Color.FromArgb(0, 255, 255, 255),
-                    palette.FlowHighlight,
-                    LinearGradientMode.ForwardDiagonal))
-                {
-                    graphics.FillPath(highlight, path);
-                }
-                graphics.Restore(state);
-            }
-
-            private static void DrawEdgeHighlights(Graphics graphics, Rectangle bounds, GlassPalette palette)
-            {
-                using (var innerPath = CreateRoundRectPath(new Rectangle(2, 2, bounds.Width - 3, bounds.Height - 3), 18))
-                using (var innerBorder = new Pen(palette.InnerBorder, 1.0f))
-                using (var topHighlight = new Pen(palette.TopHighlight, 1.0f))
-                using (var bottomShade = new Pen(palette.BottomShade, 1.0f))
-                {
-                    graphics.DrawPath(innerBorder, innerPath);
-                    graphics.DrawArc(topHighlight, bounds.Left + 5, bounds.Top + 2, bounds.Width - 10, 16, 200, 140);
-                    graphics.DrawArc(bottomShade, bounds.Left + 5, bounds.Bottom - 18, bounds.Width - 10, 16, 20, 140);
-                }
-            }
-
             protected override void Dispose(bool disposing)
             {
                 if (disposing)
@@ -5684,50 +5654,44 @@ namespace ComputerUse.NativeHost
                 var cursor = System.Windows.Forms.Cursor.Position;
                 var screen = System.Windows.Forms.Screen.FromPoint(cursor);
                 var area = screen.WorkingArea;
+                var marginToCursor = ScalePx(MarginToCursorDip);
+                var screenMargin = ScalePx(ScreenMarginDip);
 
                 var x = cursor.X - (Width / 2);
-                var y = cursor.Y - Height - MarginToCursor;
-                if (y < area.Top + ScreenMargin)
+                var y = cursor.Y - Height - marginToCursor;
+                if (y < area.Top + screenMargin)
                 {
-                    y = cursor.Y + MarginToCursor;
+                    y = cursor.Y + marginToCursor;
                 }
 
-                x = Math.Max(area.Left + ScreenMargin, Math.Min(x, area.Right - Width - ScreenMargin));
-                y = Math.Max(area.Top + ScreenMargin, Math.Min(y, area.Bottom - Height - ScreenMargin));
+                x = Math.Max(area.Left + screenMargin, Math.Min(x, area.Right - Width - screenMargin));
+                y = Math.Max(area.Top + screenMargin, Math.Min(y, area.Bottom - Height - screenMargin));
                 Location = new System.Drawing.Point(x, y);
+                EnsureTopMostLayer();
             }
 
-            private static int GetMaximumOverlayWidth()
+            private int GetMaximumOverlayWidth()
             {
                 var cursor = System.Windows.Forms.Cursor.Position;
                 var area = System.Windows.Forms.Screen.FromPoint(cursor).WorkingArea;
-                return Math.Max(MinimumWidth, area.Width - (ScreenMargin * 2));
+                var screenMargin = ScalePx(ScreenMarginDip);
+                return Math.Max(ScalePx(MinimumWidthDip), area.Width - (screenMargin * 2));
             }
 
             private void TickOverlay()
             {
                 RepositionNearCursor();
+            }
 
-                if (!Visible)
+            private void EnsureTopMostLayer()
+            {
+                if (!IsHandleCreated || IsDisposed)
                 {
                     return;
                 }
 
-                animationPhase = (animationPhase + 0.012) % 1.0;
-                RefreshLayeredWindow();
-
-                var idleMs = (DateTime.UtcNow - lastUpdateUtc).TotalMilliseconds;
-                if (idleMs < IdleFadeAfterMs)
-                {
-                    return;
-                }
-
-                Opacity = Math.Max(0, Opacity - FadeStep);
-                if (Opacity <= 0.05)
-                {
-                    Hide();
-                    Opacity = FullOpacity;
-                }
+                TopMost = true;
+                SetWindowPos(Handle, HwndTopMost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
             }
 
             private void RebuildRegion()
@@ -5744,9 +5708,9 @@ namespace ComputerUse.NativeHost
                 }
             }
 
-            private static GlassPalette ResolvePalette()
+            private static OverlayPalette ResolvePalette()
             {
-                return GlassPalette.Light;
+                return OverlayPalette.Light;
             }
 
             private static bool IsStatusOverlayDebugEnabled()
@@ -5770,89 +5734,51 @@ namespace ComputerUse.NativeHost
                 return path;
             }
 
-            private sealed class GlassPalette
+            private sealed class OverlayPalette
             {
-                public static readonly GlassPalette Light = new GlassPalette(
-                    Color.FromArgb(32, 15, 23, 42),
-                    Color.FromArgb(232, 255, 255, 255),
-                    Color.FromArgb(214, 245, 248, 252),
-                    Color.FromArgb(210, 255, 255, 255),
-                    Color.FromArgb(84, 147, 197, 253),
+                public static readonly OverlayPalette Light = new OverlayPalette(
+                    Color.FromArgb(24, 16, 32, 51),
+                    Color.FromArgb(18, 37, 99, 235),
+                    Color.FromArgb(246, 255, 255, 255),
+                    Color.FromArgb(238, 247, 250, 255),
+                    Color.FromArgb(224, 212, 223, 238),
                     Color.FromArgb(150, 255, 255, 255),
-                    Color.FromArgb(34, 99, 102, 241),
-                    Color.FromArgb(8, 255, 255, 255),
-                    Color.FromArgb(36, 255, 255, 255),
-                    Color.FromArgb(10, 125, 211, 252),
-                    Color.FromArgb(8, 244, 114, 182),
-                    Color.FromArgb(255, 29, 78, 216),
-                    Color.FromArgb(255, 0, 0, 0),
-                    Color.FromArgb(255, 37, 99, 235),
-                    Color.FromArgb(76, 96, 165, 250)
+                    Color.FromArgb(255, 21, 94, 239),
+                    Color.FromArgb(255, 11, 18, 32),
+                    Color.FromArgb(255, 47, 124, 246),
+                    Color.FromArgb(31, 47, 124, 246)
                 );
 
-                public static readonly GlassPalette Dark = new GlassPalette(
-                    Color.FromArgb(64, 0, 0, 0),
-                    Color.FromArgb(54, 24, 34, 56),
-                    Color.FromArgb(30, 9, 17, 31),
-                    Color.FromArgb(132, 226, 232, 240),
-                    Color.FromArgb(78, 125, 211, 252),
-                    Color.FromArgb(112, 255, 255, 255),
-                    Color.FromArgb(72, 15, 23, 42),
-                    Color.FromArgb(18, 255, 255, 255),
-                    Color.FromArgb(46, 255, 255, 255),
-                    Color.FromArgb(16, 125, 211, 252),
-                    Color.FromArgb(10, 244, 114, 182),
-                    Color.FromArgb(255, 147, 197, 253),
-                    Color.FromArgb(255, 248, 250, 252),
-                    Color.FromArgb(255, 96, 165, 250),
-                    Color.FromArgb(86, 147, 197, 253)
-                );
-
-                public GlassPalette(
-                    Color shadow,
+                public OverlayPalette(
+                    Color shadowBroad,
+                    Color shadowClose,
                     Color fillTop,
                     Color fillBottom,
                     Color outerBorder,
                     Color innerBorder,
-                    Color topHighlight,
-                    Color bottomShade,
-                    Color noise,
-                    Color flowHighlight,
-                    Color refractionCool,
-                    Color refractionWarm,
                     Color titleText,
                     Color detailText,
                     Color dot,
                     Color dotGlow)
                 {
-                    Shadow = shadow;
+                    ShadowBroad = shadowBroad;
+                    ShadowClose = shadowClose;
                     FillTop = fillTop;
                     FillBottom = fillBottom;
                     OuterBorder = outerBorder;
                     InnerBorder = innerBorder;
-                    TopHighlight = topHighlight;
-                    BottomShade = bottomShade;
-                    Noise = noise;
-                    FlowHighlight = flowHighlight;
-                    RefractionCool = refractionCool;
-                    RefractionWarm = refractionWarm;
                     TitleText = titleText;
                     DetailText = detailText;
                     Dot = dot;
                     DotGlow = dotGlow;
                 }
 
-                public Color Shadow { get; private set; }
+                public Color ShadowBroad { get; private set; }
+                public Color ShadowClose { get; private set; }
                 public Color FillTop { get; private set; }
                 public Color FillBottom { get; private set; }
                 public Color OuterBorder { get; private set; }
                 public Color InnerBorder { get; private set; }
-                public Color TopHighlight { get; private set; }
-                public Color BottomShade { get; private set; }
-                public Color Noise { get; private set; }
-                public Color FlowHighlight { get; private set; }
-                public Color RefractionCool { get; private set; }
-                public Color RefractionWarm { get; private set; }
                 public Color TitleText { get; private set; }
                 public Color DetailText { get; private set; }
                 public Color Dot { get; private set; }
@@ -6002,24 +5928,43 @@ namespace ComputerUse.NativeHost
                 return compact.Length > 0 ? compact : "Work";
             }
 
-            private static int MeasureTextWidth(string value, Font font)
+            private int MeasureTextWidth(string value, Font font)
             {
                 using (var bitmap = new Bitmap(1, 1, PixelFormat.Format32bppPArgb))
-                using (var graphics = Graphics.FromImage(bitmap))
-                using (var format = CreateTextFormat(StringAlignment.Near))
                 {
-                    graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
-                    return (int)Math.Ceiling(graphics.MeasureString(value, font, int.MaxValue, format).Width) + TextWidthSlack;
+                    bitmap.SetResolution(CurrentDpi, CurrentDpi);
+                    using (var graphics = Graphics.FromImage(bitmap))
+                    using (var format = CreateTextFormat())
+                    {
+                        graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                        return (int)Math.Ceiling(graphics.MeasureString(value, font, int.MaxValue, format).Width);
+                    }
                 }
             }
 
-            private static StringFormat CreateTextFormat(StringAlignment alignment)
+            private static StringFormat CreateTextFormat()
             {
-                var format = new StringFormat(StringFormatFlags.NoWrap);
-                format.Alignment = alignment;
+                var format = (StringFormat)StringFormat.GenericTypographic.Clone();
+                format.Alignment = StringAlignment.Near;
                 format.LineAlignment = StringAlignment.Center;
+                format.FormatFlags |= StringFormatFlags.NoWrap;
                 format.Trimming = StringTrimming.EllipsisCharacter;
                 return format;
+            }
+
+            private int ScalePx(int value)
+            {
+                return Math.Max(1, (int)Math.Round(value * DpiScale));
+            }
+
+            private float DpiScale
+            {
+                get { return CurrentDpi / 96.0f; }
+            }
+
+            private float CurrentDpi
+            {
+                get { return Math.Max(96, IsHandleCreated ? DeviceDpi : 96); }
             }
 
             private static Font CreateUIFont(float size, FontStyle style, string[] candidates)
@@ -6052,6 +5997,16 @@ namespace ComputerUse.NativeHost
 
             [DllImport("user32.dll", SetLastError = true)]
             private static extern IntPtr GetDC(IntPtr hwnd);
+
+            [DllImport("user32.dll", SetLastError = true)]
+            private static extern bool SetWindowPos(
+                IntPtr hwnd,
+                IntPtr hwndInsertAfter,
+                int x,
+                int y,
+                int cx,
+                int cy,
+                uint flags);
 
             [DllImport("user32.dll", SetLastError = true)]
             private static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
