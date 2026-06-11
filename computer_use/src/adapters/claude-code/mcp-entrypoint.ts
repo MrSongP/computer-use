@@ -2,6 +2,7 @@ import {
   CLAUDE_HELPER_USE_MOCK_BRIDGE_ENV,
   createClaudeMcpServer
 } from "./mcp-server.js";
+import { installProcessCleanupHooks } from "../../core/runtime/process-cleanup.js";
 
 export function createClaudeCodeMcpEntrypoint() {
   return createClaudeMcpServer({
@@ -19,5 +20,6 @@ function isMainModule(argvPath: string | undefined, moduleUrl: string): boolean 
 }
 
 if (isMainModule(process.argv[1], import.meta.url)) {
-  createClaudeCodeMcpEntrypoint().start();
+  const instance = createClaudeCodeMcpEntrypoint().start();
+  installProcessCleanupHooks(() => instance.server.close());
 }

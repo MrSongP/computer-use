@@ -63,6 +63,7 @@ export class ClaudeMcpStdioServer {
   private readonly exit: (code: number) => void;
   private rl?: readline.Interface;
   private pending: Promise<void> = Promise.resolve();
+  private closed = false;
 
   constructor(
     private readonly adapter: ClaudeCodePluginContract,
@@ -82,11 +83,22 @@ export class ClaudeMcpStdioServer {
           this.writeError(undefined, -32603, formatErrorMessage(error));
         });
     });
+    this.rl.on("close", () => {
+      void this.close();
+    });
   }
 
   async close(): Promise<void> {
-    await this.adapter.close();
-    this.rl?.close();
+    if (this.closed) {
+      return;
+    }
+
+    this.closed = true;
+    try {
+      await this.adapter.close();
+    } finally {
+      this.rl?.close();
+    }
   }
 
   private async handleLine(line: string): Promise<void> {
@@ -148,9 +160,8 @@ export class ClaudeMcpStdioServer {
         return;
 
       case "close":
-        await this.adapter.close();
+        await this.close();
         this.writeResult(request.id, {});
-        this.rl?.close();
         this.exit(0);
         return;
 

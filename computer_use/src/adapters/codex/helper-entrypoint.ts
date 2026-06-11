@@ -3,6 +3,7 @@ import {
   StdioJsonRpcServer,
   StdioRpcRuntime
 } from "../../core/transport/stdio-server.js";
+import { installProcessCleanupHooks } from "../../core/runtime/process-cleanup.js";
 
 export const CODEX_HELPER_USE_MOCK_BRIDGE_ENV = "COMPUTER_USE_TEST_USE_MOCK_BRIDGE";
 
@@ -53,7 +54,8 @@ function isMainModule(argvPath: string | undefined, moduleUrl: string): boolean 
 }
 
 if (isMainModule(process.argv[1], import.meta.url)) {
-  createCodexHelperServer({
+  const instance = createCodexHelperServer({
     useMockBridge: process.env[CODEX_HELPER_USE_MOCK_BRIDGE_ENV] === "1"
   }).start();
+  installProcessCleanupHooks(() => instance.runtime.close());
 }
