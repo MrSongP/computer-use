@@ -222,9 +222,46 @@ namespace ComputerUse.NativeHost
                 return;
             }
 
+            if (ShouldLaunchResolvedExecutable(normalized, launchTarget))
+            {
+                ValidateExecutableLaunchTarget(launchTarget.ExecutablePath);
+                LaunchProcess(launchTarget.ExecutablePath, null, Path.GetDirectoryName(launchTarget.ExecutablePath));
+                return;
+            }
+
             var explorerPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
-            var shellTarget = "shell:AppsFolder\\" + normalized;
+            var shellTarget = "shell:AppsFolder\\" + ResolveShellLaunchIdentifier(normalized, launchTarget);
             LaunchProcess(explorerPath, "\"" + shellTarget + "\"", null);
+        }
+
+        private static string ResolveShellLaunchIdentifier(string requestedApp, AppDescriptorDto launchTarget)
+        {
+            if (launchTarget != null && !string.IsNullOrWhiteSpace(launchTarget.Id))
+            {
+                return launchTarget.Id;
+            }
+
+            return requestedApp;
+        }
+
+        private static bool ShouldLaunchResolvedExecutable(string requestedApp, AppDescriptorDto launchTarget)
+        {
+            if (launchTarget == null || !LooksLikeExecutablePath(launchTarget.ExecutablePath))
+            {
+                return false;
+            }
+
+            if (LooksLikePackagedAppUserModelId(requestedApp) || LooksLikePackagedAppUserModelId(launchTarget.Id))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool LooksLikePackagedAppUserModelId(string value)
+        {
+            return !string.IsNullOrWhiteSpace(value) && value.Contains("!");
         }
 
         private static string NormalizeLaunchMode(string launchMode)
