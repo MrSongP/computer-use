@@ -229,19 +229,35 @@ namespace ComputerUse.NativeHost
                 return;
             }
 
-            var explorerPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
-            var shellTarget = "shell:AppsFolder\\" + ResolveShellLaunchIdentifier(normalized, launchTarget);
-            LaunchProcess(explorerPath, "\"" + shellTarget + "\"", null);
-        }
-
-        private static string ResolveShellLaunchIdentifier(string requestedApp, AppDescriptorDto launchTarget)
-        {
-            if (launchTarget != null && !string.IsNullOrWhiteSpace(launchTarget.Id))
+            string packagedAppUserModelId;
+            if (TryResolvePackagedAppUserModelId(normalized, launchTarget, out packagedAppUserModelId))
             {
-                return launchTarget.Id;
+                LaunchPackagedApp(normalized, launchTarget, packagedAppUserModelId);
+                return;
             }
 
-            return requestedApp;
+            object shellItem;
+            if (TryResolveShellAppItem(normalized, launchTarget, out shellItem))
+            {
+                LaunchShellAppItem(normalized, launchTarget, shellItem);
+                return;
+            }
+
+            var details = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            details["app"] = normalized;
+            if (launchTarget != null)
+            {
+                details["matchedAppId"] = launchTarget.Id ?? string.Empty;
+                details["matchedDisplayName"] = launchTarget.DisplayName ?? string.Empty;
+                details["matchedExecutablePath"] = launchTarget.ExecutablePath ?? string.Empty;
+            }
+
+            throw NativeHostException.NativeExecution(
+                "launch_app",
+                "Could not resolve the requested app to an executable path or shell application item.",
+                details,
+                CreateLaunchGuidance()
+            );
         }
 
         private static bool ShouldLaunchResolvedExecutable(string requestedApp, AppDescriptorDto launchTarget)
@@ -262,6 +278,194 @@ namespace ComputerUse.NativeHost
         private static bool LooksLikePackagedAppUserModelId(string value)
         {
             return !string.IsNullOrWhiteSpace(value) && value.Contains("!");
+        }
+
+        private static bool TryResolvePackagedAppUserModelId(
+            string requestedApp,
+            AppDescriptorDto launchTarget,
+            out string appUserModelId
+        )
+        {
+            if (LooksLikePackagedAppUserModelId(requestedApp))
+            {
+                appUserModelId = requestedApp;
+                return true;
+            }
+
+            if (launchTarget != null)
+            {
+                if (LooksLikePackagedAppUserModelId(launchTarget.Id))
+                {
+                    appUserModelId = launchTarget.Id;
+                    return true;
+                }
+
+                foreach (var alias in launchTarget.Aliases ?? new List<string>())
+                {
+                    if (LooksLikePackagedAppUserModelId(alias))
+                    {
+                        appUserModelId = alias;
+                        return true;
+                    }
+                }
+            }
+
+            appUserModelId = null;
+            return false;
+        }
+
+        private static void LaunchPackagedApp(
+            string requestedApp,
+            AppDescriptorDto launchTarget,
+            string appUserModelId
+        )
+        {
+            try
+            {
+                var manager = (IApplicationActivationManager)new ApplicationActivationManager();
+                uint processId;
+                var hr = manager.ActivateApplication(appUserModelId, null, ActivateOptions.None, out processId);
+                if (hr < 0)
+                {
+                    Marshal.ThrowExceptionForHR(hr);
+                }
+            }
+            catch (Exception error)
+            {
+                var details = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                details["app"] = requestedApp;
+                details["appUserModelId"] = appUserModelId;
+                if (launchTarget != null)
+                {
+                    details["matchedAppId"] = launchTarget.Id ?? string.Empty;
+                    details["matchedDisplayName"] = launchTarget.DisplayName ?? string.Empty;
+                    details["matchedExecutablePath"] = launchTarget.ExecutablePath ?? string.Empty;
+                }
+                details["error"] = error.Message;
+
+                throw NativeHostException.NativeExecution(
+                    "launch_app",
+                    "Failed to activate the requested packaged application.",
+                    details,
+                    CreateLaunchGuidance()
+                );
+            }
+        }
+
+        private bool TryResolveShellAppItem(string requestedApp, AppDescriptorDto launchTarget, out object shellItem)
+        {
+            shellItem = null;
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            AddShellMatchKey(keys, requestedApp);
+            if (launchTarget != null)
+            {
+                AddShellMatchKey(keys, launchTarget.Id);
+                AddShellMatchKey(keys, launchTarget.DisplayName);
+                AddShellMatchKey(keys, launchTarget.ExecutablePath);
+                foreach (var alias in launchTarget.Aliases ?? new List<string>())
+                {
+                    AddShellMatchKey(keys, alias);
+                }
+            }
+
+            if (keys.Count == 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                var shellType = Type.GetTypeFromProgID("Shell.Application");
+                if (shellType == null)
+                {
+                    return false;
+                }
+
+                var shell = Activator.CreateInstance(shellType);
+                if (shell == null)
+                {
+                    return false;
+                }
+
+                var folder = InvokeCom(shell, "NameSpace", "shell:AppsFolder");
+                if (folder == null)
+                {
+                    return false;
+                }
+
+                var items = InvokeCom(folder, "Items");
+                if (items == null)
+                {
+                    return false;
+                }
+
+                var count = Convert.ToInt32(GetCom(items, "Count"));
+                for (var index = 0; index < count; index++)
+                {
+                    ThrowIfInterrupted();
+
+                    var item = InvokeCom(items, "Item", index);
+                    if (item == null)
+                    {
+                        continue;
+                    }
+
+                    if (ShellItemMatches(item, keys))
+                    {
+                        shellItem = item;
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return false;
+        }
+
+        private static void AddShellMatchKey(ISet<string> keys, string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                keys.Add(value.Trim());
+            }
+        }
+
+        private static bool ShellItemMatches(object item, ISet<string> keys)
+        {
+            return keys.Contains(ReadComString(item, "Name")) ||
+                keys.Contains(ReadComString(item, "Path")) ||
+                keys.Contains(ReadExtendedProperty(item, "System.AppUserModel.ID")) ||
+                keys.Contains(ReadExtendedProperty(item, "System.Link.TargetParsingPath"));
+        }
+
+        private static void LaunchShellAppItem(string requestedApp, AppDescriptorDto launchTarget, object shellItem)
+        {
+            try
+            {
+                InvokeComRequired(shellItem, "InvokeVerb", "open");
+            }
+            catch (Exception error)
+            {
+                var details = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                details["app"] = requestedApp;
+                if (launchTarget != null)
+                {
+                    details["matchedAppId"] = launchTarget.Id ?? string.Empty;
+                    details["matchedDisplayName"] = launchTarget.DisplayName ?? string.Empty;
+                    details["matchedExecutablePath"] = launchTarget.ExecutablePath ?? string.Empty;
+                }
+                details["error"] = error.Message;
+
+                throw NativeHostException.NativeExecution(
+                    "launch_app",
+                    "Failed to invoke the requested shell application item.",
+                    details,
+                    CreateLaunchGuidance()
+                );
+            }
         }
 
         private static string NormalizeLaunchMode(string launchMode)
@@ -627,7 +831,8 @@ namespace ComputerUse.NativeHost
                     var displayName = ReadComString(item, "Name");
                     var appId = ReadExtendedProperty(item, "System.AppUserModel.ID");
                     var pathValue = ReadComString(item, "Path");
-                    var executablePath = LooksLikeExecutablePath(pathValue) ? pathValue : null;
+                    var linkTargetPath = ReadExtendedProperty(item, "System.Link.TargetParsingPath");
+                    var executablePath = ResolveShellItemExecutablePath(pathValue, linkTargetPath);
                     var identifier = !string.IsNullOrWhiteSpace(appId) ? appId : executablePath;
                     if (string.IsNullOrWhiteSpace(identifier) || seen.Contains(identifier))
                     {
@@ -640,7 +845,7 @@ namespace ComputerUse.NativeHost
                         Id = identifier,
                         DisplayName = displayName,
                         ExecutablePath = executablePath,
-                        ActivationModel = !string.IsNullOrWhiteSpace(appId) ? "app_user_model_id" : "executable_path"
+                        ActivationModel = ResolveShellItemActivationModel(appId, executablePath)
                     });
                 }
             }
@@ -699,6 +904,24 @@ namespace ComputerUse.NativeHost
             }
 
             return payload;
+        }
+
+        private static string ResolveShellItemExecutablePath(string pathValue, string linkTargetPath)
+        {
+            if (LooksLikeExecutablePath(pathValue))
+            {
+                return pathValue;
+            }
+
+            return LooksLikeExecutablePath(linkTargetPath) ? linkTargetPath : null;
+        }
+
+        private static string ResolveShellItemActivationModel(string appId, string executablePath)
+        {
+            return !string.IsNullOrWhiteSpace(appId) &&
+                (string.IsNullOrWhiteSpace(executablePath) || LooksLikePackagedAppUserModelId(appId))
+                ? "app_user_model_id"
+                : "executable_path";
         }
 
         private void EnrichAppIdentity(
@@ -880,20 +1103,59 @@ namespace ComputerUse.NativeHost
 
             var trimmed = value.Trim();
             AddComparableName(result, trimmed);
-            try
+
+            if (LooksLikeExecutablePath(trimmed) || ContainsPathSeparator(trimmed))
             {
-                var fileName = Path.GetFileName(trimmed);
-                if (!string.IsNullOrWhiteSpace(fileName))
+                try
                 {
-                    AddComparableName(result, fileName);
-                    AddComparableName(result, Path.GetFileNameWithoutExtension(fileName));
+                    var fileName = Path.GetFileName(trimmed);
+                    if (!string.IsNullOrWhiteSpace(fileName))
+                    {
+                        AddComparableName(result, fileName);
+                        AddComparableName(result, Path.GetFileNameWithoutExtension(fileName));
+                    }
+                }
+                catch
+                {
                 }
             }
-            catch
+            else
             {
+                AddPackagedAppComparableNames(result, trimmed);
             }
 
             return result;
+        }
+
+        private static bool ContainsPathSeparator(string value)
+        {
+            return !string.IsNullOrWhiteSpace(value) &&
+                (value.IndexOf('\\') >= 0 || value.IndexOf('/') >= 0);
+        }
+
+        private static void AddPackagedAppComparableNames(List<string> result, string value)
+        {
+            var appUserModelSeparator = value.IndexOf('!');
+            var packagePart = appUserModelSeparator >= 0 ? value.Substring(0, appUserModelSeparator) : value;
+            var packageFamilySeparator = packagePart.IndexOf('_');
+            if (packageFamilySeparator > 0)
+            {
+                packagePart = packagePart.Substring(0, packageFamilySeparator);
+            }
+
+            if (string.Equals(packagePart, value, StringComparison.OrdinalIgnoreCase) &&
+                value.IndexOf('.') < 0)
+            {
+                return;
+            }
+
+            AddComparableName(result, packagePart);
+
+            var leafSeparator = packagePart.LastIndexOf('.');
+            if (leafSeparator >= 0 && leafSeparator < packagePart.Length - 1)
+            {
+                AddComparableName(result, packagePart.Substring(leafSeparator + 1));
+            }
         }
 
         private static void AddComparableName(List<string> result, string value)
@@ -1098,6 +1360,17 @@ namespace ComputerUse.NativeHost
             }
         }
 
+        private static object InvokeComRequired(object target, string name, params object[] args)
+        {
+            return target.GetType().InvokeMember(
+                name,
+                System.Reflection.BindingFlags.InvokeMethod,
+                null,
+                target,
+                args
+            );
+        }
+
         private static object GetCom(object target, string name)
         {
             try
@@ -1143,7 +1416,7 @@ namespace ComputerUse.NativeHost
                 IntPtr.Zero,
                 IntPtr.Zero,
                 false,
-                0,
+                CreateNewConsole,
                 IntPtr.Zero,
                 string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory,
                 ref startupInfo,

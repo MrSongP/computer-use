@@ -10,6 +10,7 @@ namespace ComputerUse.NativeHost
         private const uint DesktopReadObjects = 0x0001;
         private const uint GmemMoveable = 0x0002;
         private const uint CfUnicodeText = 13;
+        private const uint CreateNewConsole = 0x00000010;
         private const int D3dDriverTypeHardware = 1;
         private const int D3dDriverTypeWarp = 5;
         private const uint D3d11CreateDeviceBgraSupport = 0x20;

@@ -224,7 +224,6 @@ namespace ComputerUse.NativeHost
             private const int DotTextGapDip = 6;
             private const int TextGapDip = 4;
             private const int TextWidthSlackDip = 6;
-            private const double FullOpacity = 1.0;
             private const uint WdaExcludeFromCapture = 0x00000011;
             private const int DwmaWindowCornerPreference = 33;
             private const int DwmWindowCornerPreferenceRound = 2;
@@ -265,7 +264,6 @@ namespace ComputerUse.NativeHost
                 BackColor = Color.Black;
                 DoubleBuffered = true;
                 FormBorderStyle = System.Windows.Forms.FormBorderStyle.None;
-                Opacity = FullOpacity;
                 ShowInTaskbar = false;
                 Size = new System.Drawing.Size(ScalePx(MinimumWidthDip), ScalePx(CapsuleHeightDip));
                 StartPosition = System.Windows.Forms.FormStartPosition.Manual;
@@ -303,8 +301,14 @@ namespace ComputerUse.NativeHost
                     const int WsExTransparent = 0x00000020;
                     const int WsExNoActivate = 0x08000000;
                     const int WsExLayered = 0x00080000;
+                    const int WsExTopMost = 0x00000008;
                     var createParams = base.CreateParams;
-                    createParams.ExStyle |= WsExToolWindow | WsExTransparent | WsExNoActivate | WsExLayered;
+                    createParams.ExStyle |=
+                        WsExTopMost |
+                        WsExToolWindow |
+                        WsExTransparent |
+                        WsExNoActivate |
+                        WsExLayered;
                     return createParams;
                 }
             }
@@ -312,7 +316,6 @@ namespace ComputerUse.NativeHost
             public void UpdateStatus(string nextTitle, string nextDetail)
             {
                 title = NormalizeStatusTitle(nextTitle);
-                Opacity = FullOpacity;
                 detail = NormalizeDisplayText(nextDetail, "\u6b63\u5728\u64cd\u4f5c\u5e94\u7528");
 
                 var detailWidth = MeasureTextWidth(detail, detailFont);
@@ -348,16 +351,15 @@ namespace ComputerUse.NativeHost
                 }
 
                 var wasVisible = Visible;
-                var previousOpacity = Opacity;
                 Hide();
 
                 return new CaptureSuppression(delegate
                 {
-                    RestoreAfterScreenCapture(wasVisible, previousOpacity);
+                    RestoreAfterScreenCapture(wasVisible);
                 });
             }
 
-            private void RestoreAfterScreenCapture(bool wasVisible, double previousOpacity)
+            private void RestoreAfterScreenCapture(bool wasVisible)
             {
                 if (!wasVisible)
                 {
@@ -373,7 +375,6 @@ namespace ComputerUse.NativeHost
                             return;
                         }
 
-                        Opacity = previousOpacity;
                         RepositionNearCursor();
                         Show();
                         EnsureTopMostLayer();
