@@ -18,6 +18,7 @@ Agent execution rules, maintenance harnesses, and test-agent prompts live outsid
 2. Project overview: `computer-use.md`
 3. Capability matrix: `acceptance/capability-matrix.md`
 4. Windows native interface: `windows_native_interface/windows-native-interface-design.md`
+5. Frame change gate requirements / 帧变化门控需求: `frame-change-gate-requirements.md`
 
 ## Documentation Scope
 
@@ -28,6 +29,7 @@ Keep `doc/` focused on stable project documentation:
 - implementation layout
 - acceptance evidence
 - Windows native design boundaries
+- frame caching and visual change gate requirements / 帧缓存与视觉变化门控需求
 
 Do not put agent harnesses, task checklists, temporary investigation notes, trace artifacts, or phase-scaffold notes in `doc/`. Put agent-facing operating rules in `.claude/` and `.agents/`, and put behavior guarantees in tests whenever possible.
 
