@@ -214,5 +214,46 @@ namespace ComputerUse.NativeHost
             [PreserveSig]
             int CreateForMonitor(IntPtr monitor, ref Guid iid, out IntPtr result);
         }
+
+        [Flags]
+        private enum ActivateOptions
+        {
+            None = 0x00000000
+        }
+
+        [ComImport]
+        [Guid("45BA127D-10A8-46EA-8AB7-56EA9078943C")]
+        private class ApplicationActivationManager
+        {
+        }
+
+        [ComImport]
+        [Guid("2E941141-7F97-4756-BA1D-9DECDE894A3D")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IApplicationActivationManager
+        {
+            [PreserveSig]
+            int ActivateApplication(
+                [MarshalAs(UnmanagedType.LPWStr)] string appUserModelId,
+                [MarshalAs(UnmanagedType.LPWStr)] string arguments,
+                ActivateOptions options,
+                out uint processId
+            );
+
+            [PreserveSig]
+            int ActivateForFile(
+                [MarshalAs(UnmanagedType.LPWStr)] string appUserModelId,
+                IntPtr itemArray,
+                [MarshalAs(UnmanagedType.LPWStr)] string verb,
+                out uint processId
+            );
+
+            [PreserveSig]
+            int ActivateForProtocol(
+                [MarshalAs(UnmanagedType.LPWStr)] string appUserModelId,
+                IntPtr itemArray,
+                out uint processId
+            );
+        }
     }
 }
