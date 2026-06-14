@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "computer-use",
   "displayName": "Computer Use",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "Local Windows computer-use plugin exposed through the repository MCP stdio adapter.",
   "author": {
     "name": "computer_use project"
@@ -19,7 +19,7 @@
       "command": "node",
       "args": [
         "-e",
-        "const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const {pathToFileURL}=require('node:url');const rel='dist/src/adapters/claude-code/mcp-entrypoint.js';const roots=[process.env.CLAUDE_PLUGIN_ROOT,process.env.PLUGIN_ROOT,path.join(process.cwd(),'computer_use'),path.join(os.homedir(),'.claude/plugins/cache/computer-use-local/computer-use/0.1.0'),process.cwd()].filter(Boolean);const root=roots.find(r=>fs.existsSync(path.join(r,rel)));if(!root){console.error('computer-use mcp entrypoint not found; searched '+roots.join(' | '));process.exit(1);}import(pathToFileURL(path.join(root,rel)).href).then(m=>m.createClaudeCodeMcpEntrypoint().start()).catch(e=>{console.error(e&&e.stack||e);process.exit(1);});"
+        "const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const {pathToFileURL}=require('node:url');const rel='dist/src/adapters/claude-code/mcp-entrypoint.js';const roots=[process.env.CLAUDE_PLUGIN_ROOT,process.env.PLUGIN_ROOT,path.join(process.cwd(),'computer_use'),path.join(os.homedir(),'.claude/plugins/cache/computer-use-local/computer-use/1.0.1'),process.cwd()].filter(Boolean);const root=roots.find(r=>fs.existsSync(path.join(r,rel)));if(!root){console.error('computer-use mcp entrypoint not found; searched '+roots.join(' | '));process.exit(1);}import(pathToFileURL(path.join(root,rel)).href).then(m=>m.createClaudeCodeMcpEntrypoint().start()).catch(e=>{console.error(e&&e.stack||e);process.exit(1);});"
       ]
     }
   }

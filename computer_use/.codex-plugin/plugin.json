@@ -1,6 +1,6 @@
 {
   "name": "computer-use",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "Local Windows computer-use plugin with skills and MCP tools for discovery, capture, and UI automation.",
   "author": {
     "name": "computer_use project"
