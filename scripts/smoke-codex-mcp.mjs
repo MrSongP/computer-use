@@ -5,12 +5,18 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
-const pluginRoot = path.join(repoRoot, "computer_use");
-const entrypoint = path.join(pluginRoot, "dist", "src", "adapters", "claude-code", "mcp-entrypoint.js");
+const pluginRoot = process.env.COMPUTER_USE_SMOKE_PLUGIN_ROOT
+  ? path.resolve(process.env.COMPUTER_USE_SMOKE_PLUGIN_ROOT)
+  : path.join(repoRoot, "computer_use");
+const entrypoint = path.join(pluginRoot, "dist", "src", "adapters", "codex", "mcp-entrypoint.js");
 
 async function main() {
   const child = spawn(process.execPath, [entrypoint], {
     cwd: pluginRoot,
+    env: {
+      ...process.env,
+      COMPUTER_USE_TEST_USE_MOCK_BRIDGE: "1"
+    },
     stdio: ["pipe", "pipe", "pipe"]
   });
 
@@ -46,11 +52,11 @@ async function main() {
     child.stdin.write(`${JSON.stringify(payload)}\n`);
   };
 
-  const waitForResponses = async (count, timeoutMs = 15000) => {
+  const waitForResponses = async (count, timeoutMs = 5000) => {
     const startedAt = Date.now();
     while (responses.length < count) {
       if (Date.now() - startedAt > timeoutMs) {
-        throw new Error(`Timed out waiting for ${count} MCP responses. stderr=${stderrBuffer || "<empty>"}`);
+        throw new Error(`Timed out waiting for ${count} Codex MCP responses. stderr=${stderrBuffer || "<empty>"}`);
       }
 
       await new Promise((resolve) => setTimeout(resolve, 25));
@@ -67,7 +73,7 @@ async function main() {
       params: {
         protocolVersion: "2024-11-05",
         clientInfo: {
-          name: "computer-use-smoke",
+          name: "computer-use-codex-smoke",
           version: "0.0.0"
         }
       }
@@ -89,12 +95,7 @@ async function main() {
       method: "tools/call",
       params: {
         name: "list_apps",
-        arguments: {
-          claudeTurnMetadata: {
-            session_id: "smoke-session",
-            turn_id: "smoke-turn"
-          }
-        }
+        arguments: {}
       }
     });
     request({
@@ -103,18 +104,16 @@ async function main() {
       method: "tools/call",
       params: {
         name: "end_turn",
-        arguments: {
-          claudeTurnMetadata: {
-            session_id: "smoke-session",
-            turn_id: "smoke-turn"
-          }
-        }
+        arguments: {}
       }
     });
 
     const [initializeResponse, listResponse, listAppsResponse, endTurnResponse] = await waitForResponses(4);
     if (initializeResponse?.result?.serverInfo?.name !== "computer-use") {
       throw new Error(`Unexpected initialize response: ${JSON.stringify(initializeResponse)}`);
+    }
+    if (initializeResponse?.result?.serverInfo?.version !== "1.0.1") {
+      throw new Error(`Codex MCP entrypoint reported the wrong version: ${JSON.stringify(initializeResponse)}`);
     }
 
     const tools = listResponse?.result?.tools;
@@ -123,14 +122,14 @@ async function main() {
     }
 
     const toolNames = new Set(tools.map((tool) => tool?.name));
-    for (const requiredTool of ["list_windows", "get_window_state", "click", "end_turn"]) {
+    for (const requiredTool of ["list_apps", "get_window_state", "click", "end_turn"]) {
       if (!toolNames.has(requiredTool)) {
         throw new Error(`Missing required tool "${requiredTool}" in tools/list.`);
       }
     }
 
     if (listAppsResponse?.result?.isError) {
-      throw new Error(`list_apps failed during smoke test: ${JSON.stringify(listAppsResponse)}`);
+      throw new Error(`list_apps failed during Codex smoke test: ${JSON.stringify(listAppsResponse)}`);
     }
 
     const parsedAppsPayload = JSON.parse(listAppsResponse.result.content[0].text);
@@ -139,7 +138,7 @@ async function main() {
     }
 
     if (endTurnResponse?.result?.isError) {
-      throw new Error(`end_turn failed during smoke test: ${JSON.stringify(endTurnResponse)}`);
+      throw new Error(`end_turn failed during Codex smoke test: ${JSON.stringify(endTurnResponse)}`);
     }
 
     request({
@@ -163,7 +162,7 @@ async function main() {
           return;
         }
 
-        reject(new Error(`MCP entrypoint exited with code ${code}. stderr=${stderrBuffer || "<empty>"}`));
+        reject(new Error(`Codex MCP entrypoint exited with code ${code}. stderr=${stderrBuffer || "<empty>"}`));
       });
       child.once("error", (error) => {
         clearTimeout(timeout);
@@ -171,7 +170,7 @@ async function main() {
       });
     });
 
-    process.stdout.write("Claude MCP smoke passed.\n");
+    process.stdout.write("Codex MCP smoke passed.\n");
   } catch (error) {
     child.kill();
     throw error;

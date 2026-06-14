@@ -15,13 +15,17 @@ import { getClaudeToolInputSchema, getClaudeToolOutputSchema } from "./tool-sche
 export function createClaudeAdapter(
   runtime: ExecutionContext,
   dispatcher: Dispatcher,
-  capabilities: CapabilityRegistry
+  capabilities: CapabilityRegistry,
+  options: {
+    host?: "claude-code" | "codex";
+  } = {}
 ): ClaudeCodePluginContract & {
   runtime: ExecutionContext;
   dispatcher: Dispatcher;
 } {
   let nextRequestId = 1;
   let currentTurnMeta: TurnMetadata | undefined;
+  const host = options.host ?? "claude-code";
   const capabilityDescriptors: readonly ClaudeCodeCapabilityDescriptor[] = [
     ...capabilities.list().map((item) => ({
       name: item.method,
@@ -42,7 +46,7 @@ export function createClaudeAdapter(
   ];
 
   return {
-    host: "claude-code",
+    host,
     runtime,
     dispatcher,
     capabilities: capabilityDescriptors,
@@ -56,12 +60,12 @@ export function createClaudeAdapter(
     ) {
       if (method === "end_turn") {
         await runtime.endTurn.close();
-        clearTurnMeta(options.meta);
+        currentTurnMeta = undefined;
         return null;
       }
 
       await endPreviousTurnIfScopeChanged(options.meta);
-      const meta = ensureClaudeHostMeta(options.meta);
+      const meta = ensureClaudeHostMeta(options.meta, host);
       const response = await dispatcher.dispatch({
         id: nextRequestId++,
         method,
@@ -78,7 +82,7 @@ export function createClaudeAdapter(
     },
     async endTurn(meta?: ClaudeCodeInvokeMeta) {
       await runtime.endTurn.close();
-      clearTurnMeta(meta);
+      currentTurnMeta = undefined;
     },
     async close() {
       await runtime.endTurn.close();
@@ -115,13 +119,16 @@ export function createClaudeAdapter(
   }
 }
 
-export function ensureClaudeHostMeta(meta: ClaudeCodeInvokeMeta | undefined): JsonRpcMeta {
+export function ensureClaudeHostMeta(
+  meta: ClaudeCodeInvokeMeta | undefined,
+  host: "claude-code" | "codex" = "claude-code"
+): JsonRpcMeta {
   const normalizedTurnMeta = normalizeTurnMeta(meta);
   const { claudeTurnMetadata: _claudeTurnMetadata, ...jsonRpcMeta } = meta ?? {};
 
   return {
     ...jsonRpcMeta,
-    host: "claude-code",
+    host,
     codexTurnMetadata: normalizedTurnMeta
   };
 }
