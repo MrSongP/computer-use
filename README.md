@@ -138,9 +138,11 @@ npm run doctor:claude
 
 - Repository maintenance contract: [AGENTS.md](./AGENTS.md)
 - Documentation index: [doc/README.md](./doc/README.md)
-- Project overview: [doc/computer-use.md](./doc/computer-use.md)
+- Architecture overview: [doc/architecture/overview.md](./doc/architecture/overview.md)
+- Windows native interface: [doc/architecture/windows-native-interface.md](./doc/architecture/windows-native-interface.md)
 - Capability matrix: [doc/acceptance/capability-matrix.md](./doc/acceptance/capability-matrix.md)
-- Windows native interface: [doc/windows_native_interface/windows-native-interface-design.md](./doc/windows_native_interface/windows-native-interface-design.md)
+- Testing strategy: [doc/development/testing.md](./doc/development/testing.md)
+- Manual plugin testing: [doc/development/manual-testing.md](./doc/development/manual-testing.md)
 - Agent harness: [.claude/computer-use-harness.md](./.claude/computer-use-harness.md) and [.agents/computer-use-harness.md](./.agents/computer-use-harness.md)
 
 ## Windows Notes

@@ -56,6 +56,8 @@ npm --prefix computer_use run test -- tests/integration/stdio-runtime.test.ts
 
 ## Documentation Boundary
 
-- Human-facing project docs stay in `doc/`.
+- Human-facing project docs follow `doc/README.md`: architecture in `doc/architecture/`, evidence in `doc/acceptance/`, and test/maintenance methods in `doc/development/`.
 - Agent-facing harnesses, checklists, and prompts stay in `.claude/` and `.agents/`.
+- Public capability or workflow changes update the plugin skill and both mirrored agent harnesses in the same change.
+- Test-strategy changes update `doc/development/testing.md`, both mirrored maintenance checklists, and repository policy tests.
 - Temporary investigation notes and one-off phase/scaffold reports are not committed as long-term docs.

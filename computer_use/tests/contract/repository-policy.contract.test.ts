@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createScaffoldRuntime } from "../../src/index.js";
@@ -14,6 +14,25 @@ const dialogActions = new Set([
   "select_folder_in_dialog",
   "set_save_path_in_dialog"
 ]);
+const canonicalMarkdownFiles = [
+  ".agents/computer-use-harness.md",
+  ".agents/computer-use-installation-harness.md",
+  ".agents/computer-use-maintenance-checklist.md",
+  ".claude/computer-use-harness.md",
+  ".claude/computer-use-installation-harness.md",
+  ".claude/computer-use-maintenance-checklist.md",
+  "AGENTS.md",
+  "README.md",
+  "README.zh-CN.md",
+  "computer_use/README.md",
+  "computer_use/skills/computer-use/SKILL.md",
+  "doc/README.md",
+  "doc/acceptance/capability-matrix.md",
+  "doc/architecture/overview.md",
+  "doc/architecture/windows-native-interface.md",
+  "doc/development/manual-testing.md",
+  "doc/development/testing.md"
+].sort();
 
 test("agent-facing mirror documents stay byte-for-byte synchronized", async () => {
   for (const name of [
@@ -32,7 +51,6 @@ test("every registered capability remains documented on all public surfaces", as
   const documents = await Promise.all([
     readRepositoryFile("README.md"),
     readRepositoryFile("README.zh-CN.md"),
-    readRepositoryFile("doc", "computer-use.md"),
     readRepositoryFile("doc", "acceptance", "capability-matrix.md"),
     readRepositoryFile(".agents", "computer-use-harness.md"),
     readRepositoryFile(".claude", "computer-use-harness.md"),
@@ -43,6 +61,39 @@ test("every registered capability remains documented on all public surfaces", as
   for (const method of methods) {
     for (const [index, document] of documents.entries()) {
       assert.ok(document.includes(`\`${method}\``), `${method} missing from document ${index + 1}`);
+    }
+  }
+});
+
+test("Markdown documentation follows the canonical ownership structure", async () => {
+  assert.deepEqual(await collectMarkdownFiles(repositoryRoot), canonicalMarkdownFiles);
+});
+
+test("all local Markdown links resolve inside the repository", async () => {
+  for (const relativeFile of canonicalMarkdownFiles) {
+    const absoluteFile = path.join(repositoryRoot, relativeFile);
+    const content = await readFile(absoluteFile, "utf8");
+    for (const match of content.matchAll(/!?\[[^\]]*]\(([^)]+)\)/g)) {
+      const rawTarget = match[1]?.trim();
+      if (!rawTarget || /^(?:https?:|mailto:|#)/i.test(rawTarget)) {
+        continue;
+      }
+
+      const withoutTitle = rawTarget.replace(/\s+"[^"]*"$/, "");
+      const fileTarget = decodeURIComponent(withoutTitle.split("#", 1)[0] ?? "");
+      if (!fileTarget) {
+        continue;
+      }
+
+      const resolved = path.resolve(path.dirname(absoluteFile), fileTarget);
+      assert.ok(
+        isInsideRepository(resolved),
+        `${relativeFile} links outside the repository: ${rawTarget}`
+      );
+      await assert.doesNotReject(
+        access(resolved),
+        `${relativeFile} contains a dead local link: ${rawTarget}`
+      );
     }
   }
 });
@@ -167,6 +218,33 @@ function readRepositoryFile(...segments: string[]): Promise<string> {
 
 function readPluginFile(...segments: string[]): Promise<string> {
   return readFile(path.join(pluginRoot, ...segments), "utf8");
+}
+
+async function collectMarkdownFiles(root: string): Promise<string[]> {
+  const output: string[] = [];
+  const ignoredDirectories = new Set([".git", "bin", "dist", "node_modules", "obj"]);
+
+  async function visit(current: string): Promise<void> {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!ignoredDirectories.has(entry.name)) {
+          await visit(path.join(current, entry.name));
+        }
+        continue;
+      }
+      if (entry.isFile() && entry.name.endsWith(".md")) {
+        output.push(path.relative(root, path.join(current, entry.name)).replaceAll("\\", "/"));
+      }
+    }
+  }
+
+  await visit(root);
+  return output.sort();
+}
+
+function isInsideRepository(candidate: string): boolean {
+  const relative = path.relative(repositoryRoot, candidate);
+  return relative.length === 0 || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function requireMatch(value: string, pattern: RegExp, description: string): string {
