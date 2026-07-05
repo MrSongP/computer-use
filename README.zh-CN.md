@@ -138,9 +138,11 @@ npm run doctor:claude
 
 - 仓库维护契约：[AGENTS.md](./AGENTS.md)
 - 文档入口：[doc/README.md](./doc/README.md)
-- 项目总览：[doc/computer-use.md](./doc/computer-use.md)
+- 架构总览：[doc/architecture/overview.md](./doc/architecture/overview.md)
+- Windows native interface：[doc/architecture/windows-native-interface.md](./doc/architecture/windows-native-interface.md)
 - 能力矩阵：[doc/acceptance/capability-matrix.md](./doc/acceptance/capability-matrix.md)
-- Windows native interface：[doc/windows_native_interface/windows-native-interface-design.md](./doc/windows_native_interface/windows-native-interface-design.md)
+- 测试策略：[doc/development/testing.md](./doc/development/testing.md)
+- 手工插件测试：[doc/development/manual-testing.md](./doc/development/manual-testing.md)
 - Agent harness：[.claude/computer-use-harness.md](./.claude/computer-use-harness.md) 和 [.agents/computer-use-harness.md](./.agents/computer-use-harness.md)
 
 ## Windows 兼容说明

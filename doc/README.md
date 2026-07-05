@@ -1,48 +1,55 @@
-# computer_use Documentation
+# Documentation
 
-`doc/` is the human-facing documentation area for the `computer_use` project. It explains what the project is, what it supports, where the implementation lives, and which verification evidence proves the current capability surface.
+This directory contains canonical project documentation for `computer_use`. Each document has one primary responsibility; README files provide short entrypoints and link here instead of duplicating detail.
 
-Repository-wide coding rules, agent execution rules, maintenance harnesses, and test-agent prompts live outside `doc/`:
+## Documentation Map
 
-- `AGENTS.md`
-- `.claude/computer-use-harness.md`
-- `.claude/computer-use-maintenance-checklist.md`
-- `.claude/computer-use-installation-harness.md`
-- `.claude/agent/computer-use-plugin-test-agent.md`
-- `.agents/computer-use-harness.md`
-- `.agents/computer-use-maintenance-checklist.md`
-- `.agents/computer-use-installation-harness.md`
+| Area | Document | Responsibility |
+| --- | --- | --- |
+| Architecture | [Architecture overview](architecture/overview.md) | System context, layers, dependency direction, lifecycle, and repository layout |
+| Architecture | [Windows native interface](architecture/windows-native-interface.md) | Stable boundary between shared semantics and Win32/WGC/UIA/input implementation |
+| Acceptance | [Capability matrix](acceptance/capability-matrix.md) | Supported public capabilities, implementation anchors, and primary evidence |
+| Development | [Testing strategy](development/testing.md) | Test layers, commands, real fixture coverage, and executable policy |
+| Development | [Manual plugin testing](development/manual-testing.md) | Representative application testing, evidence, and issue classification |
 
-## Reading Order
+## Reading Paths
 
-1. Repository README: `../README.md`
-2. Project overview: `computer-use.md`
-3. Capability matrix: `acceptance/capability-matrix.md`
-4. Windows native interface: `windows_native_interface/windows-native-interface-design.md`
-5. Frame change gate requirements / 帧变化门控需求: `frame-change-gate-requirements.md`
+### Users
 
-## Documentation Scope
+1. [English README](../README.md) or [简体中文 README](../README.zh-CN.md)
+2. [Capability matrix](acceptance/capability-matrix.md) when exact supported tools matter
 
-Keep `doc/` focused on stable project documentation:
+### Contributors
 
-- project purpose and supported capabilities
-- installation and development entrypoints
-- implementation layout
-- acceptance evidence
-- Windows native design boundaries
-- frame caching and visual change gate requirements / 帧缓存与视觉变化门控需求
+1. [Repository contract](../AGENTS.md)
+2. [Architecture overview](architecture/overview.md)
+3. [Testing strategy](development/testing.md)
+4. The change-area document required by `AGENTS.md`
 
-Do not put agent harnesses, task checklists, temporary investigation notes, trace artifacts, or phase-scaffold notes in `doc/`. Put repository-wide coding rules in `AGENTS.md`, specialized agent-facing operating rules in `.claude/` and `.agents/`, and behavior guarantees in tests whenever possible.
+### Maintainers And Testers
 
-## Code Anchors
+1. [Capability matrix](acceptance/capability-matrix.md)
+2. [Testing strategy](development/testing.md)
+3. [Manual plugin testing](development/manual-testing.md)
+4. Mirrored agent checklists under `.agents/` and `.claude/`
 
-- Plugin root: `computer_use`
-- Codex manifest: `computer_use\.codex-plugin\plugin.json`
-- Claude Code manifest: `computer_use\.claude-plugin\plugin.json`
-- MCP manifest: `computer_use\.mcp.json`
-- Codex marketplace: `.agents\plugins\marketplace.json`
-- Shared core: `computer_use\src\core`
-- Windows implementation: `computer_use\src\windows`
-- Host adapters: `computer_use\src\adapters`
-- Native host: `computer_use\native-host\ComputerUse.NativeHost`
-- Tests: `computer_use\tests`
+## Documentation Boundaries
+
+- `README.md` and `README.zh-CN.md` own product introduction, prerequisites, quick installation, and navigation.
+- `computer_use/README.md` owns plugin-root packaging, runtime, and trace details.
+- `doc/architecture/` owns stable design and implementation boundaries.
+- `doc/acceptance/` owns supported behavior and evidence.
+- `doc/development/` owns testing and maintenance methods.
+- `AGENTS.md` owns repository-wide contributor rules.
+- `.agents/` and `.claude/` own mirrored agent maintenance contracts.
+- `computer_use/skills/` owns instructions shipped with the installed plugin.
+
+Temporary investigations, trace output, screenshots, generated artifacts, and task-specific reports are not project documentation and must not be committed here.
+
+## Structure Rules
+
+- Prefer links to canonical detail over repeated tables or command blocks.
+- Move or rename documents only with all inbound links updated.
+- Keep local Markdown links valid; repository contract tests enforce them.
+- Keep `.agents/` and `.claude/` mirror documents byte-for-byte synchronized.
+- Delete superseded documents instead of leaving stale alternatives.

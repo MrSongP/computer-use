@@ -4,6 +4,8 @@
 
 This directory is the actual plugin root for the local Windows computer-use implementation. The shared TypeScript core owns contracts, dispatch, lifecycle, and trace; the Windows layer owns capture, UIA, input, launch, and the native-host bridge; Codex and Claude Code use the same runtime through adapters.
 
+Project architecture, acceptance evidence, and test strategy are maintained in the repository [documentation index](../doc/README.md). This file is limited to plugin-root packaging, runtime, and trace details.
+
 ## Plugin Files
 
 - [`.codex-plugin/plugin.json`](./.codex-plugin/plugin.json)
