@@ -105,6 +105,7 @@ The .NET build targets `net8.0-windows10.0.19041.0` so the native host can consu
 - `list_apps`, `list_windows`, `get_window`, `launch_app`
 - `get_window_state` with direct MCP image content for screenshots and structured UIA nodes
 - `click`, `click_element`, `press_key`, `type_text`, `scroll`, `set_value`, `drag`, `perform_secondary_action`, `activate_window`
+- `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`
 - `end_turn`, turn lifecycle, physical Escape interrupt handling, and trace evidence
 - Codex adapter, Claude Code MCP adapter, and Windows native-host bridge
 

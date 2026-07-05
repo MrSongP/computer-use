@@ -24,7 +24,7 @@ const nativeHostAssemblyPath = path.resolve(
 );
 const smokeAppSourcePath = path.resolve("tests/fixtures/ComputerUse.P5SmokeApp.cs");
 
-test("native host closes the P5 exit with real WGC and UIA smoke coverage", async (t) => {
+test("native host exercises every non-dialog action against the real smoke app", async (t) => {
   if (process.platform !== "win32") {
     t.skip("Windows-only native-host smoke test");
     return;
@@ -64,6 +64,7 @@ test("native host closes the P5 exit with real WGC and UIA smoke coverage", asyn
     const client = new NativeHostClient(dotnetPath, [nativeHostAssemblyPath]);
 
     try {
+      const verifiedActions = new Set<string>();
       await client.request("beginTurn", {
         meta: {
           host: "codex",
@@ -80,55 +81,59 @@ test("native host closes the P5 exit with real WGC and UIA smoke coverage", asyn
         title: smokeInfo.title
       };
 
-      let initialState: any;
-      try {
-        initialState = (await client.request("getWindowState", {
-          params: {
-            window,
-            include_screenshot: true,
-            include_text: true,
-            max_elements: 128
+      const initialState = (await client.request("getWindowState", {
+        params: {
+          window,
+          include_screenshot: false,
+          include_text: true,
+          max_elements: 128
+        }
+      })).result;
+
+      await t.test("captures the fixture through real WGC when the desktop session allows it", async (captureTest) => {
+        let screenshotState: any;
+        try {
+          screenshotState = (await client.request("getWindowState", {
+            params: {
+              window,
+              include_screenshot: true,
+              include_text: false
+            }
+          })).result;
+        } catch (error) {
+          if (isSandboxedDesktopCaptureError(error)) {
+            captureTest.skip(
+              "WGC capture and GDI fallback are unavailable in this sandboxed/restricted desktop session"
+            );
+            return;
           }
-        })).result;
-      } catch (error) {
-        if (isSandboxedDesktopCaptureError(error)) {
-          t.skip(
-            "WGC capture and GDI fallback are unavailable in this sandboxed/restricted desktop session; " +
-            "rerun this smoke outside the sandbox before treating WGC as unsupported on this machine"
+          throw error;
+        }
+
+        if (screenshotState.capture.screenshotSource !== "wgc") {
+          captureTest.skip(
+            `WGC is unavailable in this desktop session; capture used ${screenshotState.capture.screenshotSource}`
           );
           return;
         }
-        throw error;
-      }
 
-      if (initialState.capture.screenshotSource !== "wgc") {
-        t.skip(
-          `WGC capture is unavailable in this desktop session; got ${initialState.capture.screenshotSource}. ` +
-          "Rerun outside the sandbox before treating WGC as unsupported on this machine."
-        );
-        return;
-      }
-
-      assert.equal(initialState.capture.screenshotSource, "wgc");
-      assert.equal(initialState.screenshot.mime, "image/jpeg");
-      assert.equal(initialState.screenshot.raw.mime, "image/png");
+        assert.equal(screenshotState.screenshot.mime, "image/jpeg");
+        assert.equal(screenshotState.screenshot.raw.mime, "image/png");
+      });
 
       const initialNodes = flattenNodes(initialState.text);
-      const inputNode = requireNode(
-        initialNodes,
-        (node) => node.name === "Input Value" && node.patterns?.includes("ValuePattern"),
-        "ValuePattern input node"
-      );
-      const buttonNode = requireNode(
-        initialNodes,
-        (node) => node.name === "Apply" && node.patterns?.includes("InvokePattern"),
-        "InvokePattern button node"
-      );
-      const comboNode = requireNode(
-        initialNodes,
-        (node) => node.name === "Mode Picker" && node.secondaryActions?.includes("expand"),
-        "expand-capable combo node"
-      );
+      requireNode(initialNodes, (node) => node.name === "Input Value", "ValuePattern input node");
+      requireNode(initialNodes, (node) => node.name === "Apply", "InvokePattern button node");
+      requireNode(initialNodes, (node) => node.name === "Mode Picker", "expand-capable combo node");
+      requireNode(initialNodes, (node) => node.name === "Pointer Target", "pointer target");
+      requireNode(initialNodes, (node) => node.name === "Keyboard Input", "keyboard input");
+      requireNode(initialNodes, (node) => node.name === "Scroll Surface", "scroll surface");
+      requireNode(initialNodes, (node) => node.name === "Drag Surface", "drag surface");
+
+      const activation = (await client.request("activateWindow", { window })).result;
+      assert.equal(activation.ok, true);
+      assert.equal(activation.focused, true);
+      verifiedActions.add("activate_window");
 
       const filteredState = (await client.request("getWindowState", {
         params: {
@@ -153,6 +158,13 @@ test("native host closes the P5 exit with real WGC and UIA smoke coverage", asyn
       assert.ok(filteredState.capture.elementsTotal >= filteredState.capture.elementsReturned);
       assert.equal(filteredState.capture.lastReturnedIndex, filteredButton.index);
 
+      let actionState = await getTextState(client, window);
+      let actionNodes = flattenNodes(actionState.text);
+      const inputNode = requireNode(
+        actionNodes,
+        (node) => node.name === "Input Value" && node.patterns?.includes("ValuePattern"),
+        "fresh ValuePattern input node"
+      );
       await client.request("setValue", {
         params: {
           window,
@@ -160,44 +172,30 @@ test("native host closes the P5 exit with real WGC and UIA smoke coverage", asyn
           value: "hello native host"
         }
       });
-      await sleep(250);
+      actionState = await expectStatus(client, window, "Typed:hello native host");
+      actionNodes = flattenNodes(actionState.text);
+      verifiedActions.add("set_value");
 
-      const afterSetValueState = (await client.request("getWindowState", {
-        params: {
-          window,
-          include_screenshot: false,
-          include_text: true,
-          max_elements: 128
-        }
-      })).result;
-      const afterSetValueNodes = flattenNodes(afterSetValueState.text);
-      assert.ok(
-        afterSetValueNodes.some((node) => node.name === "Typed:hello native host"),
-        "status label should reflect the ValuePattern update"
+      const buttonNode = requireNode(
+        actionNodes,
+        (node) => node.name === "Apply" && node.patterns?.includes("InvokePattern"),
+        "fresh InvokePattern button node"
       );
-
       await client.request("clickElement", {
         params: {
           window,
           element_index: buttonNode.index
         }
       });
-      await sleep(250);
+      actionState = await expectStatus(client, window, "Clicked:hello native host");
+      actionNodes = flattenNodes(actionState.text);
+      verifiedActions.add("click_element");
 
-      const afterClickState = (await client.request("getWindowState", {
-        params: {
-          window,
-          include_screenshot: false,
-          include_text: true,
-          max_elements: 128
-        }
-      })).result;
-      const afterClickNodes = flattenNodes(afterClickState.text);
-      assert.ok(
-        afterClickNodes.some((node) => node.name === "Clicked:hello native host"),
-        "click_element should invoke the button and update the UI"
+      let comboNode = requireNode(
+        actionNodes,
+        (node) => node.name === "Mode Picker" && node.secondaryActions?.includes("expand"),
+        "fresh expand-capable combo node"
       );
-
       await client.request("performSecondaryAction", {
         params: {
           window,
@@ -205,20 +203,126 @@ test("native host closes the P5 exit with real WGC and UIA smoke coverage", asyn
           action: "expand"
         }
       });
-      await sleep(250);
-
-      const afterExpandState = (await client.request("getWindowState", {
+      actionState = await expectStatus(client, window, "Expanded");
+      actionNodes = flattenNodes(actionState.text);
+      verifiedActions.add("perform_secondary_action");
+      comboNode = requireNode(
+        actionNodes,
+        (node) => node.name === "Mode Picker" && node.secondaryActions?.includes("collapse"),
+        "fresh collapse-capable combo node"
+      );
+      await client.request("performSecondaryAction", {
         params: {
           window,
-          include_screenshot: false,
-          include_text: true,
-          max_elements: 128
+          element_index: comboNode.index,
+          action: "collapse"
         }
+      });
+      actionState = await expectStatus(client, window, "Collapsed");
+      actionNodes = flattenNodes(actionState.text);
+
+      const pointerNode = requireNode(
+        actionNodes,
+        (node) => node.name === "Pointer Target",
+        "pointer target with bounds"
+      );
+      const pointerPoint = centerOfNode(pointerNode);
+      const pointerFeedback = (await client.request("sendPointerClick", {
+        click: {
+          x: pointerPoint.x,
+          y: pointerPoint.y,
+          button: "left",
+          clickCount: 1
+        },
+        targetWindow: window
       })).result;
-      const afterExpandNodes = flattenNodes(afterExpandState.text);
-      assert.ok(
-        afterExpandNodes.some((node) => node.name === "Expanded"),
-        "perform_secondary_action should expand the combo box and update the UI"
+      assert.equal(pointerFeedback.hitTest.matchesTarget, true);
+      await expectStatus(client, window, "PointerClicked");
+      verifiedActions.add("click");
+
+      actionState = await getTextState(client, window);
+      actionNodes = flattenNodes(actionState.text);
+      const keyboardNode = requireNode(
+        actionNodes,
+        (node) => node.name === "Keyboard Input",
+        "keyboard input with bounds"
+      );
+      const keyboardPoint = centerOfNode(keyboardNode);
+      await client.request("sendPointerClick", {
+        click: {
+          x: keyboardPoint.x,
+          y: keyboardPoint.y,
+          button: "left",
+          clickCount: 1
+        },
+        targetWindow: window
+      });
+      await client.request("sendText", { text: "typed by native host" });
+      await expectStatus(client, window, "Typed:typed by native host");
+      verifiedActions.add("type_text");
+
+      await client.request("sendKeyboardInputs", {
+        inputs: [
+          { key: "Return", vkCode: 13, scanCode: 0, flags: 0 },
+          { key: "Return", vkCode: 13, scanCode: 0, flags: 2 }
+        ]
+      });
+      await expectStatus(client, window, "Key:Enter");
+      verifiedActions.add("press_key");
+
+      actionState = await getTextState(client, window);
+      actionNodes = flattenNodes(actionState.text);
+      const scrollPoint = centerOfNode(requireNode(
+        actionNodes,
+        (node) => node.name === "Scroll Surface",
+        "scroll surface with bounds"
+      ));
+      await client.request("sendPointerScroll", {
+        scroll: {
+          x: scrollPoint.x,
+          y: scrollPoint.y,
+          scrollX: 0,
+          scrollY: 120
+        }
+      });
+      await expectStatus(client, window, "Scrolled");
+      verifiedActions.add("scroll");
+
+      actionState = await getTextState(client, window);
+      actionNodes = flattenNodes(actionState.text);
+      const dragBounds = requireBounds(requireNode(
+        actionNodes,
+        (node) => node.name === "Drag Surface",
+        "drag surface with bounds"
+      ));
+      await client.request("sendPointerDrag", {
+        drag: {
+          fromX: Math.round(dragBounds.left + 30),
+          fromY: Math.round((dragBounds.top + dragBounds.bottom) / 2),
+          toX: Math.round(dragBounds.right - 30),
+          toY: Math.round((dragBounds.top + dragBounds.bottom) / 2),
+          button: "left",
+          durationMs: 300,
+          steps: 12
+        }
+      });
+      await expectStatus(client, window, "Dragged");
+      verifiedActions.add("drag");
+
+      assert.deepEqual(
+        [...verifiedActions].sort(),
+        [
+          "activate_window",
+          "click",
+          "click_element",
+          "drag",
+          "perform_secondary_action",
+          "press_key",
+          "scroll",
+          "set_value",
+          "type_text"
+        ],
+        "the real smoke app must cover every non-dialog action capability"
       );
 
       await client.request("endTurn", {});
@@ -414,6 +518,48 @@ function flattenNodes(root: any): any[] {
     nodes.push(...flattenNodes(child));
   }
   return nodes;
+}
+
+async function getTextState(client: NativeHostClient, window: Record<string, unknown>): Promise<any> {
+  return (await client.request("getWindowState", {
+    params: {
+      window,
+      include_screenshot: false,
+      include_text: true,
+      max_elements: 128
+    }
+  })).result;
+}
+
+async function expectStatus(
+  client: NativeHostClient,
+  window: Record<string, unknown>,
+  expected: string
+): Promise<any> {
+  await sleep(250);
+  const state = await getTextState(client, window);
+  assert.ok(
+    flattenNodes(state.text).some((node) => node.name === expected),
+    `status label should report ${expected}`
+  );
+  return state;
+}
+
+function centerOfNode(node: any): { x: number; y: number } {
+  const bounds = requireBounds(node);
+  return {
+    x: Math.round((bounds.left + bounds.right) / 2),
+    y: Math.round((bounds.top + bounds.bottom) / 2)
+  };
+}
+
+function requireBounds(node: any): { left: number; top: number; right: number; bottom: number } {
+  const bounds = node.bounds;
+  assert.ok(bounds, `node ${String(node.name)} does not expose bounds`);
+  for (const field of ["left", "top", "right", "bottom"] as const) {
+    assert.equal(typeof bounds[field], "number", `node ${String(node.name)} has invalid ${field} bound`);
+  }
+  return bounds;
 }
 
 function isSandboxedDesktopCaptureError(error: unknown): boolean {

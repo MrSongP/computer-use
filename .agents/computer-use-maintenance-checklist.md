@@ -49,6 +49,8 @@ npm --prefix computer_use run test -- tests/integration/stdio-runtime.test.ts
 
 - Discovery and launch changes preserve `list_apps`, `list_windows`, `get_window`, and `launch_app` evidence.
 - Capture/UIA changes preserve `get_window_state`, UIA element actions, and native-host smoke evidence.
+- Non-dialog action changes preserve real `ComputerUse.P5SmokeApp.cs` coverage for `activate_window`, `click`, `click_element`, `press_key`, `type_text`, `scroll`, `set_value`, `drag`, and `perform_secondary_action`.
+- Dialog-helper changes preserve `tests/integration/common-dialog-helper.test.ts` coverage for `select_file_in_dialog`, `select_folder_in_dialog`, and `set_save_path_in_dialog`.
 - Action changes preserve pointer, keyboard, text, activation, lifecycle, and trace evidence.
 - Adapter changes preserve both Codex and Claude Code integration evidence.
 
