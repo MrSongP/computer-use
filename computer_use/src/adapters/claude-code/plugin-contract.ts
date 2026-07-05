@@ -27,7 +27,7 @@ export interface ClaudeCodeInvokeOptions {
 }
 
 export interface ClaudeCodePluginContract {
-  host: "claude-code";
+  host: "claude-code" | "codex";
   capabilities: readonly ClaudeCodeCapabilityDescriptor[];
   bootstrap(): Promise<void>;
   invoke(

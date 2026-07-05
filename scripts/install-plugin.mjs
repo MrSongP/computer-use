@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,8 +11,10 @@ const pluginRoot = path.join(repoRoot, "computer_use");
 const pluginSelector = "computer-use@computer-use-local";
 const codexMarketplaceName = "computer-use-local";
 const codexSkillConfigName = "computer-use:computer-use";
+const codexPluginName = "computer-use";
 const claudePermissionRule = "mcp__plugin_computer-use_computer-use";
 const npmCommand = "npm";
+const semverPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 const [command, target, ...rawArgs] = process.argv.slice(2);
 const flags = parseFlags(rawArgs);
@@ -66,8 +68,8 @@ async function install(targetName) {
 }
 
 async function installCodex() {
-  step("Running MCP smoke test");
-  await run(process.execPath, [path.join(repoRoot, "scripts", "smoke-claude-mcp.mjs")]);
+  step("Running Codex MCP smoke test");
+  await run(process.execPath, [path.join(repoRoot, "scripts", "smoke-codex-mcp.mjs")]);
 
   step("Registering Codex marketplace");
   await run("codex", ["plugin", "marketplace", "add", repoRoot]);
@@ -75,6 +77,12 @@ async function installCodex() {
   if (!(await hasCodexPluginInstallCommands())) {
     step("Enabling Codex plugin in config");
     await enableCodexPluginInConfig();
+    step("Synchronizing Codex local plugin cache");
+    await syncCodexLocalPluginCache();
+    step("Verifying Codex local plugin cache");
+    await assertCodexLocalPluginCache();
+    step("Running cached Codex MCP smoke test");
+    await runCodexCacheSmoke();
     process.stdout.write("\nCodex install finished. Start a new Codex thread/session if the plugin was not already loaded.\n");
     return;
   }
@@ -86,6 +94,12 @@ async function installCodex() {
 
   step("Installing Codex plugin");
   await run("codex", ["plugin", "add", pluginSelector]);
+  step("Synchronizing Codex local plugin cache");
+  await syncCodexLocalPluginCache();
+  step("Verifying Codex local plugin cache");
+  await assertCodexLocalPluginCache();
+  step("Running cached Codex MCP smoke test");
+  await runCodexCacheSmoke();
   process.stdout.write("\nCodex install finished. Start a new Codex thread/session if the plugin was not already loaded.\n");
 }
 
@@ -153,10 +167,21 @@ async function doctor(targetName) {
   await requireCommands(["node", targetName === "codex" ? "codex" : "claude"]);
 
   step("Checking built runtime entrypoint");
-  await assertFile(path.join(pluginRoot, "dist", "src", "adapters", "claude-code", "mcp-entrypoint.js"));
+  await assertFile(path.join(
+    pluginRoot,
+    "dist",
+    "src",
+    "adapters",
+    targetName === "codex" ? "codex" : "claude-code",
+    "mcp-entrypoint.js"
+  ));
 
-  step("Running MCP smoke test");
-  await run(process.execPath, [path.join(repoRoot, "scripts", "smoke-claude-mcp.mjs")]);
+  step(`Running ${targetName === "codex" ? "Codex" : "Claude"} MCP smoke test`);
+  await run(process.execPath, [path.join(
+    repoRoot,
+    "scripts",
+    targetName === "codex" ? "smoke-codex-mcp.mjs" : "smoke-claude-mcp.mjs"
+  )]);
 
   if (targetName === "claude") {
     step("Validating Claude marketplace and plugin manifests");
@@ -193,6 +218,12 @@ async function doctor(targetName) {
     if (!(await isCodexPluginInstalled())) {
       throw new Error(`Codex plugin ${pluginSelector} is not installed.`);
     }
+
+    step("Checking Codex local plugin cache");
+    await assertCodexLocalPluginCache();
+
+    step("Running cached Codex MCP smoke test");
+    await runCodexCacheSmoke();
   }
 
   process.stdout.write("\nDoctor passed.\n");
@@ -295,6 +326,279 @@ async function assertCodexMarketplaceConfig() {
   const marketplaceSection = getTomlSection(config, `marketplaces.${codexMarketplaceName}`);
   if (!marketplaceSection) {
     throw new Error(`Codex marketplace ${codexMarketplaceName} is not registered in ${getCodexConfigPath()}.`);
+  }
+}
+
+async function syncCodexLocalPluginCache() {
+  const pluginVersion = await readCodexPluginVersion();
+  const cacheRoot = getCodexPluginCacheRoot();
+  const target = resolveChildPath(cacheRoot, pluginVersion);
+  const temp = resolveChildPath(cacheRoot, `.sync-${pluginVersion}-${process.pid}`);
+
+  await mkdir(cacheRoot, { recursive: true });
+  await rm(temp, { recursive: true, force: true });
+  await copyPluginToCache(pluginRoot, temp);
+
+  await replaceCodexCacheTarget(temp, target);
+  await removeStaleCodexPluginCacheVersions(cacheRoot, pluginVersion);
+  await clearCodexAppIndexCache();
+}
+
+async function readCodexPluginVersion() {
+  const manifest = JSON.parse(await readFile(path.join(pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
+  if (typeof manifest.version !== "string" || manifest.version.trim().length === 0) {
+    throw new Error("Codex plugin manifest is missing a non-empty version.");
+  }
+  const version = manifest.version.trim();
+  if (!semverPattern.test(version)) {
+    throw new Error(`Codex plugin manifest version must be semver-like. Received: ${version}`);
+  }
+  return version;
+}
+
+function getCodexPluginCacheRoot() {
+  const codexHome = path.resolve(process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"));
+  if (path.parse(codexHome).root === codexHome) {
+    throw new Error(`Refusing to use root directory as CODEX_HOME: ${codexHome}`);
+  }
+
+  return path.resolve(
+    codexHome,
+    "plugins",
+    "cache",
+    codexMarketplaceName,
+    codexPluginName
+  );
+}
+
+function resolveChildPath(parent, child) {
+  if (path.isAbsolute(child)) {
+    throw new Error(`Refusing absolute child path under ${parent}: ${child}`);
+  }
+
+  const resolvedParent = path.resolve(parent);
+  const resolvedChild = path.resolve(resolvedParent, child);
+  const comparableParent = normalizePathForCompare(resolvedParent);
+  const comparableChild = normalizePathForCompare(resolvedChild);
+  if (comparableChild !== comparableParent && !comparableChild.startsWith(`${comparableParent}${path.sep}`)) {
+    throw new Error(`Resolved path escapes ${resolvedParent}: ${resolvedChild}`);
+  }
+
+  return resolvedChild;
+}
+
+function normalizePathForCompare(value) {
+  const resolved = path.resolve(value);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+async function replaceCodexCacheTarget(temp, target) {
+  const backup = `${target}.backup-${Date.now()}-${process.pid}`;
+  let backedUp = false;
+
+  if (await pathExists(target)) {
+    try {
+      await rename(target, backup);
+      backedUp = true;
+    } catch (error) {
+      await overlayCurrentCodexPluginCache(target, temp, error);
+      return;
+    }
+  }
+
+  try {
+    await renameDirectory(temp, target);
+  } catch (error) {
+    if (backedUp) {
+      await restoreCodexCacheBackup(backup, target, error);
+    }
+    throw error;
+  }
+
+  if (backedUp) {
+    await rm(backup, { recursive: true, force: true }).catch((error) => {
+      warn(`Could not remove old Codex plugin cache backup ${backup}. ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+}
+
+async function restoreCodexCacheBackup(backup, target, originalError) {
+  try {
+    await rm(target, { recursive: true, force: true });
+    await rename(backup, target);
+  } catch (restoreError) {
+    warn(
+      `Failed to restore Codex plugin cache backup ${backup} after update failure. ` +
+      `Update failed: ${originalError instanceof Error ? originalError.message : String(originalError)} ` +
+      `Restore failed: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`
+    );
+  }
+}
+
+async function overlayCurrentCodexPluginCache(target, temp, renameError) {
+  try {
+    await overlayPluginRuntimeFiles(pluginRoot, target);
+    await rm(temp, { recursive: true, force: true });
+    warn(
+      `Could not atomically replace Codex plugin cache ${target}, so runtime files were overwritten in place. ` +
+      `Close existing Codex windows before opening a new one if they were already using the old files. ` +
+      `${renameError instanceof Error ? renameError.message : String(renameError)}`
+    );
+  } catch (overlayError) {
+    await rm(temp, { recursive: true, force: true }).catch(() => undefined);
+    throw new Error(
+      `Could not replace or overwrite Codex plugin cache ${target}. ` +
+      `Replace failed: ${renameError instanceof Error ? renameError.message : String(renameError)} ` +
+      `Overwrite failed: ${overlayError instanceof Error ? overlayError.message : String(overlayError)}`
+    );
+  }
+}
+
+async function renameDirectory(source, target) {
+  try {
+    await rename(source, target);
+  } catch (error) {
+    if (!error || error.code !== "EXDEV") {
+      throw error;
+    }
+    await rm(target, { recursive: true, force: true });
+    await cp(source, target, { recursive: true, force: true, dereference: true });
+    await rm(source, { recursive: true, force: true });
+  }
+}
+
+async function copyPluginToCache(source, target) {
+  await cp(source, target, {
+    recursive: true,
+    force: true,
+    dereference: true,
+    filter: shouldCopyPluginCachePath
+  });
+}
+
+async function overlayPluginRuntimeFiles(source, target) {
+  await cp(source, target, {
+    recursive: true,
+    force: true,
+    dereference: true,
+    filter: shouldOverlayPluginRuntimePath
+  });
+}
+
+function shouldCopyPluginCachePath(source) {
+  const normalized = source.replace(/\\/g, "/");
+  return !normalized.includes("/.git/") &&
+    !normalized.includes("/.turbo/") &&
+    !normalized.endsWith("/.DS_Store");
+}
+
+function shouldOverlayPluginRuntimePath(source) {
+  if (!shouldCopyPluginCachePath(source)) {
+    return false;
+  }
+
+  const relative = path.relative(pluginRoot, source).replace(/\\/g, "/");
+  return relative === "" ||
+    relative === ".mcp.json" ||
+    relative === "package.json" ||
+    relative === "package-lock.json" ||
+    relative === "README.md" ||
+    relative === ".codex-plugin" ||
+    relative.startsWith(".codex-plugin/") ||
+    relative === "dist" ||
+    relative.startsWith("dist/") ||
+    relative === "skills" ||
+    relative.startsWith("skills/");
+}
+
+async function clearCodexAppIndexCache() {
+  const codexCacheRoot = path.join(
+    process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"),
+    "cache"
+  );
+  for (const name of ["codex_apps_server_info", "codex_apps_tools"]) {
+    const dir = path.join(codexCacheRoot, name);
+    if (!(await pathExists(dir))) {
+      continue;
+    }
+    const entries = await readdir(dir, { withFileTypes: true });
+    await Promise.all(entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .map((entry) => rm(path.join(dir, entry.name), { force: true })));
+  }
+}
+
+async function removeStaleCodexPluginCacheVersions(cacheRoot, currentVersion) {
+  const entries = await readdir(cacheRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === currentVersion || entry.name.startsWith(".")) {
+      continue;
+    }
+
+    const stalePath = resolveChildPath(cacheRoot, entry.name);
+    try {
+      await rm(stalePath, { recursive: true, force: true });
+    } catch (error) {
+      await overlayStaleCodexPluginCache(stalePath, error);
+    }
+  }
+}
+
+async function assertCodexLocalPluginCache() {
+  const pluginVersion = await readCodexPluginVersion();
+  await assertCodexCacheEntry(await getCodexCurrentCachePath(), pluginVersion);
+}
+
+async function runCodexCacheSmoke() {
+  await run(process.execPath, [path.join(repoRoot, "scripts", "smoke-codex-mcp.mjs")], {
+    env: {
+      ...process.env,
+      COMPUTER_USE_SMOKE_PLUGIN_ROOT: await getCodexCurrentCachePath()
+    }
+  });
+}
+
+async function getCodexCurrentCachePath() {
+  const pluginVersion = await readCodexPluginVersion();
+  return resolveChildPath(getCodexPluginCacheRoot(), pluginVersion);
+}
+
+async function assertCodexCacheEntry(target, expectedVersion) {
+  const manifestPath = path.join(target, ".codex-plugin", "plugin.json");
+  const mcpPath = path.join(target, ".mcp.json");
+  const entrypointPath = path.join(target, "dist", "src", "adapters", "codex", "mcp-entrypoint.js");
+
+  await assertFile(manifestPath);
+  await assertFile(mcpPath);
+  await assertFile(entrypointPath);
+
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (manifest.version !== expectedVersion) {
+    throw new Error(`Codex cache manifest version mismatch at ${manifestPath}: expected ${expectedVersion}, found ${manifest.version}`);
+  }
+
+  const mcp = JSON.parse(await readFile(mcpPath, "utf8"));
+  const args = mcp?.mcpServers?.["computer-use"]?.args;
+  if (!Array.isArray(args) || !args.includes("./dist/src/adapters/codex/mcp-entrypoint.js")) {
+    throw new Error(`Codex cache .mcp.json does not point at the Codex entrypoint: ${mcpPath}`);
+  }
+}
+
+async function overlayStaleCodexPluginCache(stalePath, removeError) {
+  try {
+    await overlayPluginRuntimeFiles(pluginRoot, stalePath);
+    warn(
+      `Could not remove stale Codex plugin cache ${stalePath}, so it was overwritten in place. ` +
+      `Close existing Codex windows before opening a new one if they were already using the old files. ` +
+      `${removeError instanceof Error ? removeError.message : String(removeError)}`
+    );
+  } catch (overlayError) {
+    warn(
+      `Could not remove or overwrite stale Codex plugin cache ${stalePath}. ` +
+      `Close all Codex windows and rerun npm run install:codex:compiled. ` +
+      `Remove failed: ${removeError instanceof Error ? removeError.message : String(removeError)} ` +
+      `Overwrite failed: ${overlayError instanceof Error ? overlayError.message : String(overlayError)}`
+    );
   }
 }
 

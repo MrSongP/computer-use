@@ -2,6 +2,7 @@ import readline from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { createScaffoldRuntime, createWindowsRuntime } from "../../index.js";
 import type { JsonRpcId } from "../../core/contracts/rpc.js";
+import type { TurnMetadata } from "../../core/contracts/rpc.js";
 import type {
   ClaudeCodeAdapterMethod,
   ClaudeCodeCapabilityDescriptor,
@@ -15,6 +16,7 @@ export const CLAUDE_HELPER_USE_MOCK_BRIDGE_ENV = "COMPUTER_USE_TEST_USE_MOCK_BRI
 
 export interface ClaudeMcpServerOptions {
   useMockBridge?: boolean;
+  host?: "claude-code" | "codex";
   input?: Readable;
   output?: Writable;
   exit?: (code: number) => void;
@@ -39,8 +41,11 @@ interface ToolCallPayload {
 
 export function createClaudeMcpServer(options: ClaudeMcpServerOptions = {}) {
   const scaffold = options.useMockBridge ? createScaffoldRuntime() : createWindowsRuntime();
-  const adapter = createClaudeAdapter(scaffold.runtime, scaffold.dispatcher, scaffold.capabilities);
+  const adapter = createClaudeAdapter(scaffold.runtime, scaffold.dispatcher, scaffold.capabilities, {
+    host: options.host
+  });
   const server = new ClaudeMcpStdioServer(adapter, {
+    host: options.host,
     input: options.input,
     output: options.output,
     exit: options.exit
@@ -61,6 +66,7 @@ export class ClaudeMcpStdioServer {
   private readonly output: Writable;
   private readonly input: Readable;
   private readonly exit: (code: number) => void;
+  private readonly host: "claude-code" | "codex";
   private rl?: readline.Interface;
   private pending: Promise<void> = Promise.resolve();
   private closed = false;
@@ -69,6 +75,7 @@ export class ClaudeMcpStdioServer {
     private readonly adapter: ClaudeCodePluginContract,
     options: Omit<ClaudeMcpServerOptions, "useMockBridge"> = {}
   ) {
+    this.host = options.host ?? "claude-code";
     this.input = options.input ?? process.stdin;
     this.output = options.output ?? process.stdout;
     this.exit = options.exit ?? ((code) => process.exitCode = code);
@@ -135,7 +142,7 @@ export class ClaudeMcpStdioServer {
           },
           serverInfo: {
             name: "computer-use",
-            version: "0.1.0"
+            version: "1.0.1"
           }
         });
         return;
@@ -151,7 +158,7 @@ export class ClaudeMcpStdioServer {
         return;
 
       case "tools/call":
-        this.writeResult(request.id, await this.handleToolCall(request.params));
+        this.writeResult(request.id, await this.handleToolCall(request.params, request.id));
         return;
 
       case "shutdown":
@@ -170,7 +177,7 @@ export class ClaudeMcpStdioServer {
     }
   }
 
-  private async handleToolCall(params: unknown): Promise<unknown> {
+  private async handleToolCall(params: unknown, requestId: JsonRpcId): Promise<unknown> {
     if (!isRecord(params)) {
       return toolError("tools/call params must be an object.");
     }
@@ -185,7 +192,7 @@ export class ClaudeMcpStdioServer {
       return toolError(`Unknown computer-use tool: ${call.name}`);
     }
 
-    const payload = extractToolCallPayload(call.arguments);
+    const payload = extractToolCallPayload(call.arguments, this.host, requestId);
     try {
       const result = await this.adapter.invoke(method, payload.params, {
         meta: payload.meta
@@ -246,19 +253,32 @@ function toMcpToolDescriptor(capability: ClaudeCodeCapabilityDescriptor): unknow
   return descriptor;
 }
 
-function extractToolCallPayload(args: unknown): ToolCallPayload {
+function extractToolCallPayload(
+  args: unknown,
+  host: "claude-code" | "codex" = "claude-code",
+  requestId: JsonRpcId = "unscoped"
+): ToolCallPayload {
   if (!isRecord(args)) {
-    return { params: {} };
+    return {
+      params: {},
+      meta: host === "codex"
+        ? { codexTurnMetadata: buildFallbackCodexTurnMetadata(requestId), host }
+        : undefined
+    };
   }
 
   const input = { ...args };
   const explicitMeta = readMeta(input.meta);
+  const codexTurnMetadata = readTurnMetadata(input.codexTurnMetadata)
+    ?? explicitMeta?.codexTurnMetadata
+    ?? (host === "codex" ? buildFallbackCodexTurnMetadata(requestId) : undefined);
   delete input.meta;
 
   const meta: ClaudeCodeInvokeMeta = {
     ...(explicitMeta ?? {}),
     claudeTurnMetadata: readTurnMetadata(input.claudeTurnMetadata),
-    codexTurnMetadata: readTurnMetadata(input.codexTurnMetadata) ?? explicitMeta?.codexTurnMetadata,
+    codexTurnMetadata,
+    host,
     computerUseStatus: readStatusMeta(input.computerUseStatus) ?? explicitMeta?.computerUseStatus,
     computerUseTrace: readTraceMeta(input.computerUseTrace) ?? explicitMeta?.computerUseTrace
   };
@@ -271,6 +291,13 @@ function extractToolCallPayload(args: unknown): ToolCallPayload {
   return {
     params: input,
     meta: hasAnyKey(meta) ? meta : undefined
+  };
+}
+
+function buildFallbackCodexTurnMetadata(requestId: JsonRpcId): TurnMetadata {
+  return {
+    session_id: process.env.CODEX_SESSION_ID ?? `codex-mcp-${process.pid}`,
+    turn_id: process.env.CODEX_TURN_ID ?? `request-${String(requestId)}`
   };
 }
 
