@@ -18,6 +18,5 @@ test("createNativeBridge instantiates the requested driver", () => {
   assert.equal(createNativeBridge({ driver: "mock" }).driverName, "mock");
   assert.equal(createNativeBridge({ driver: "powershell" }).driverName, "powershell");
   assert.equal(createNativeBridge({ driver: "native-host" }).driverName, "native-host");
-  assert.equal(createNativeBridge({ driver: "ffi" }).driverName, "ffi");
   assert.equal(createNativeBridge({ driver: "napi" }).driverName, "napi");
 });

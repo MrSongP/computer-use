@@ -1,11 +1,10 @@
 import type { NativeBridge } from "./native-bridge.js";
-import { FfiNativeBridge } from "./ffi-driver.js";
 import { MockNativeBridge } from "../../mocks/native-bridge.mock.js";
 import { NativeHostBridge } from "./native-host-driver.js";
 import { NapiNativeBridge } from "./napi-driver.js";
 import { PowerShellNativeBridge } from "./powershell-driver.js";
 
-export type NativeBridgeDriver = "mock" | "powershell" | "ffi" | "napi" | "native-host";
+export type NativeBridgeDriver = "mock" | "powershell" | "napi" | "native-host";
 
 export interface NativeBridgeFactoryOptions {
   driver?: NativeBridgeDriver;
@@ -21,8 +20,6 @@ export function createNativeBridge(options: NativeBridgeFactoryOptions = {}): Na
       return new MockNativeBridge();
     case "powershell":
       return new PowerShellNativeBridge();
-    case "ffi":
-      return new FfiNativeBridge();
     case "napi":
       return new NapiNativeBridge();
     case "native-host":
@@ -40,7 +37,6 @@ export function resolveNativeBridgeDriver(
   switch (requested) {
     case "mock":
     case "powershell":
-    case "ffi":
     case "napi":
     case "native-host":
       return requested;
