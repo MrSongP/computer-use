@@ -12,6 +12,7 @@ node_modules/
 dist/
 build/
 coverage/
+.artifacts/
 *.tsbuildinfo
 
 # .NET / Native host build output

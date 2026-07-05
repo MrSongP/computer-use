@@ -290,7 +290,7 @@ test("claude code MCP server returns structuredContent for tool errors", async (
     assert.equal(errorResponse.result.structuredContent.code, "missing_screenshot_coordinate_metadata");
     assert.deepEqual(errorResponse.result.structuredContent.details.missingWindowFields, [
       "window.rect",
-      "window.visibleClickableRegion",
+      "window.screenshotWindowRegion",
       "window.screenshotCoordinateScale"
     ]);
     assert.equal(errorResponse.result.structuredContent.guidance.should_retry, true);

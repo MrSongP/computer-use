@@ -14,6 +14,16 @@ This is the agent-facing installation contract for `computer_use`.
 
 `.agents\plugins\marketplace.json` must point at `./computer_use`, which is the real plugin root.
 
+## Distribution And Path Portability
+
+This plugin is distributed to unrelated GitHub users. Installation behavior must work for arbitrary Windows account names, drives, clone directories, cache directories, and future versions.
+
+- Codex MCP paths remain relative to the installed plugin root.
+- Claude Code MCP paths use `${CLAUDE_PLUGIN_ROOT}`.
+- Do not hard-code a local clone path or a version-specific plugin cache path.
+- Do not edit installed cache files as source. Reinstall from the repository.
+- The packaged plugins enable trace and write to `<plugin-root>/.artifacts/computer-use-trace/` unless `COMPUTER_USE_TRACE_DIR` is set.
+
 ## Required Install Behavior
 
 The installer should:
@@ -53,3 +63,11 @@ npm run doctor:claude
 ```
 
 Also run adapter or integration tests affected by the install-surface change.
+
+To verify a real installed copy instead of the source tree, set `COMPUTER_USE_SMOKE_PLUGIN_ROOT` to the host-reported plugin root before running the smoke script. This is a test input only; never commit one machine's resolved path.
+
+Search for accidental machine-specific paths before completion:
+
+```powershell
+rg -n '[A-Za-z]:\\(?:Users|Desktop)\\|plugins[\\/]+cache[\\/]+.*[0-9]+\.[0-9]+\.[0-9]+' computer_use scripts -g '!**/node_modules/**' -g '!**/dist/**' -g '!**/bin/**' -g '!**/obj/**'
+```

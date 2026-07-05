@@ -26,7 +26,12 @@ export interface WindowRef {
   foregroundWindowId?: number;
   rectCoordinateSpace?: "virtual_screen" | "unknown";
   rectOnVirtualScreen?: boolean;
-  visibleClickableRegion?: WindowRect;
+  /**
+   * Window-relative rectangle represented by screenshot pixels.
+   * This is geometric capture metadata; it does not assert that the region
+   * passes Win32 hit-testing or can receive pointer input.
+   */
+  screenshotWindowRegion?: WindowRect;
   screenshotCoordinateScale?: {
     x: number;
     y: number;

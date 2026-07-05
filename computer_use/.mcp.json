@@ -5,6 +5,9 @@
       "args": [
         "./dist/src/adapters/claude-code/mcp-entrypoint.js"
       ],
+      "env": {
+        "COMPUTER_USE_TRACE": "1"
+      },
       "cwd": "."
     }
   }

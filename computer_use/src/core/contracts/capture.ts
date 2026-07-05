@@ -34,7 +34,11 @@ export interface WindowStateScreenshot {
       y: number;
     };
     windowRect?: Rect;
-    visibleClickableRegion?: Rect;
+    /**
+     * Window-relative rectangle represented by screenshot pixels.
+     * It is not a pointer hit-test result.
+     */
+    screenshotWindowRegion?: Rect;
   };
   degradedReason?: "wgc_failed" | string;
   gdiFallbackAt?: string;

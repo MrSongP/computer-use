@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
-const pluginRoot = path.join(repoRoot, "computer_use");
+const pluginRoot = path.resolve(
+  process.env.COMPUTER_USE_SMOKE_PLUGIN_ROOT ?? path.join(repoRoot, "computer_use")
+);
 const entrypoint = path.join(pluginRoot, "dist", "src", "adapters", "claude-code", "mcp-entrypoint.js");
 
 async function main() {

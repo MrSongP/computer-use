@@ -167,8 +167,8 @@ function assertScreenshotCoordinateMetadata(params: ClickParams): void {
   if (!isFiniteRect(params.window.rect)) {
     missing.push("window.rect");
   }
-  if (!isFiniteRect(params.window.visibleClickableRegion)) {
-    missing.push("window.visibleClickableRegion");
+  if (!isFiniteRect(params.window.screenshotWindowRegion)) {
+    missing.push("window.screenshotWindowRegion");
   }
   if (
     typeof params.window.screenshotCoordinateScale?.x !== "number" ||
@@ -448,14 +448,14 @@ function resolveWindowPoint(params: ClickParams): { x: number; y: number } {
     return { x: params.x, y: params.y };
   }
 
-  const visibleRegion = params.window.visibleClickableRegion;
-  if (!visibleRegion) {
+  const screenshotWindowRegion = params.window.screenshotWindowRegion;
+  if (!screenshotWindowRegion) {
     return { x: params.x, y: params.y };
   }
 
   return {
-    x: visibleRegion.left + params.x * (params.window.screenshotCoordinateScale?.x ?? 1),
-    y: visibleRegion.top + params.y * (params.window.screenshotCoordinateScale?.y ?? 1)
+    x: screenshotWindowRegion.left + params.x * (params.window.screenshotCoordinateScale?.x ?? 1),
+    y: screenshotWindowRegion.top + params.y * (params.window.screenshotCoordinateScale?.y ?? 1)
   };
 }
 

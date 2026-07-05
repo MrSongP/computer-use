@@ -88,7 +88,7 @@ test("window state service forwards accessibility filters and max elements", asy
   ]);
 });
 
-test("window state service annotates screenshot coordinate mapping and visible region", async () => {
+test("window state service annotates the exact window region represented by screenshot pixels", async () => {
   const bridge = {
     async getVirtualScreenMetrics() {
       return {
@@ -130,7 +130,7 @@ test("window state service annotates screenshot coordinate mapping and visible r
     include_text: false
   });
 
-  assert.deepEqual(state.window.visibleClickableRegion, {
+  assert.deepEqual(state.window.screenshotWindowRegion, {
     left: 10,
     top: 0,
     right: 100,
@@ -143,6 +143,12 @@ test("window state service annotates screenshot coordinate mapping and visible r
     windowY: 0,
     screenX: 0,
     screenY: 20
+  });
+  assert.deepEqual(state.screenshot?.coordinateMapping?.screenshotWindowRegion, {
+    left: 10,
+    top: 0,
+    right: 100,
+    bottom: 100
   });
 });
 

@@ -81,7 +81,7 @@ The tool should provide facts:
 - Which app/window id, title, bounds, visibility, focus, minimized state, and health were observed.
 - Whether a launch was attempted, reused, refused, or needs tray/taskbar recovery.
 - Whether a capture succeeded, degraded, omitted text, or used a fallback path.
-- Screenshot dimensions, coordinate mapping, and clickable region metadata.
+- Screenshot dimensions and coordinate mapping through `screenshotWindowRegion`. This field is geometric capture metadata, not a clickability or hit-test guarantee.
 - UIA nodes, indexes, roles, names, values, bounds, patterns, and secondary actions when available.
 - Whether an input action was dispatched, through which coordinate/window/element plan, and what immediate diagnostics were available.
 - Trace artifact paths when trace is enabled.

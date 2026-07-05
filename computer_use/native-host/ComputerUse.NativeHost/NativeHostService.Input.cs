@@ -206,6 +206,7 @@ namespace ComputerUse.NativeHost
             }
 
             var hitTest = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            hitTest["api"] = "WindowFromPoint";
             if (rawHitWindow != IntPtr.Zero)
             {
                 hitTest["rawHwndAtPoint"] = rawHitWindow.ToInt64();
@@ -223,6 +224,11 @@ namespace ComputerUse.NativeHost
                 if (!string.IsNullOrWhiteSpace(processName))
                 {
                     hitTest["processName"] = processName;
+                }
+                var className = GetWindowClassName(hitWindow);
+                if (!string.IsNullOrWhiteSpace(className))
+                {
+                    hitTest["className"] = className;
                 }
             }
             else if (targetWindowId.HasValue)
@@ -263,13 +269,30 @@ namespace ComputerUse.NativeHost
                 details["targetWindowId"] = targetWindowId.Value;
             }
             details["hitTest"] = hitTest;
+            var desktopShellHit = PointerHitTestResolvedDesktopShell(hitTest);
+            details["failureClass"] = desktopShellHit
+                ? "desktop_shell_hit_test_mismatch"
+                : "point_hits_other_window";
 
             return NativeHostException.NativeExecution(
                 "WindowFromPoint",
                 "Pointer click was refused because the point does not hit the target window.",
                 details,
-                CreatePointerTargetMismatchGuidance()
+                CreatePointerTargetMismatchGuidance(desktopShellHit)
             );
+        }
+
+        private static bool PointerHitTestResolvedDesktopShell(IDictionary<string, object> hitTest)
+        {
+            object classNameValue;
+            if (!hitTest.TryGetValue("className", out classNameValue) || !(classNameValue is string))
+            {
+                return false;
+            }
+
+            var className = (string)classNameValue;
+            return string.Equals(className, "Progman", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(className, "WorkerW", StringComparison.OrdinalIgnoreCase);
         }
 
         private void MoveCursorHumanized(int targetX, int targetY)

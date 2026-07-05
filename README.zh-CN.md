@@ -53,6 +53,28 @@ npm run install:all
 
 npm 安装入口会安装 TypeScript 依赖、编译 runtime、编译 C# native host、运行 MCP smoke test、注册本地 marketplace、安装插件，并运行 Node 版 doctor。
 
+## GitHub 分发与路径可移植性
+
+本仓库是供其他用户从 GitHub 克隆和安装的正式插件源码，不依赖维护者本机目录。安装和运行逻辑不得写死用户名、盘符、仓库绝对路径、插件缓存目录或版本号。
+
+- Codex 从已安装插件根目录解析 `.mcp.json` 中的相对路径。
+- Claude Code 使用宿主提供的 `${CLAUDE_PLUGIN_ROOT}` 定位安装副本。
+- 不要直接修改 Codex 或 Claude Code 的插件缓存；始终修改仓库源码后重新构建和安装。
+- 维护者和自动化代理在修改代码前必须遵守根目录 [`AGENTS.md`](./AGENTS.md)。
+
+## Trace / 调试记录
+
+Codex 和 Claude Code 的发行插件默认开启 trace。每个宿主把记录写入自己当前安装副本下的：
+
+```text
+<plugin-root>/.artifacts/computer-use-trace/
+  <sessionId>/<turnId>/<actionId>/
+```
+
+每次操作通常包含 `request.json`、`response.json` 或 `error.json`、`evidence.json`，以及与操作相关的截图、激活计划、指针反馈或 UIA 证据。该记录描述工具调用，不包含模型隐藏思维过程。
+
+不同用户、宿主、安装方式和插件版本对应的 `<plugin-root>` 都可能不同。需要固定到其他位置时设置 `COMPUTER_USE_TRACE_DIR`，不要依赖文档中的某个本机绝对路径。
+
 ## Native Host 编译
 
 只编译 C# Windows native host：
@@ -113,6 +135,7 @@ npm run doctor:claude
 
 ## 文档
 
+- 仓库维护契约：[AGENTS.md](./AGENTS.md)
 - 文档入口：[doc/README.md](./doc/README.md)
 - 项目总览：[doc/computer-use.md](./doc/computer-use.md)
 - 能力矩阵：[doc/acceptance/capability-matrix.md](./doc/acceptance/capability-matrix.md)

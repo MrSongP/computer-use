@@ -416,12 +416,23 @@ namespace ComputerUse.NativeHost
             );
         }
 
-        private static Dictionary<string, object> CreatePointerTargetMismatchGuidance()
+        private static Dictionary<string, object> CreatePointerTargetMismatchGuidance(bool desktopShellHit)
         {
+            if (desktopShellHit)
+            {
+                return CreateGuidance(
+                    false,
+                    "Pointer input was not sent because WindowFromPoint resolved the Windows desktop shell instead of the target window.",
+                    "Do not retry nearby coordinates. This result can indicate that the rendered target does not participate in standard Win32 hit-testing, so it does not prove the screenshot point is wrong. Changing coordinateSpace only changes coordinate mapping and cannot bypass this check. Use verified keyboard navigation or another semantic input path.",
+                    null,
+                    null
+                );
+            }
+
             return CreateGuidance(
                 true,
                 "Pointer input was not sent because the requested point belongs to another window.",
-                "Refresh get_window_state and use the returned state.window rect before retrying. If the window is on a secondary monitor, verify rectCoordinateSpace and rectOnVirtualScreen before using window-relative coordinates.",
+                "Refresh get_window_state once and verify the intended point against the new screenshot before retrying. coordinateSpace=screenshot converts screenshot pixels but does not bypass WindowFromPoint target validation. If the same non-target window is reported again, stop coordinate retries and use keyboard or semantic input.",
                 null,
                 null
             );

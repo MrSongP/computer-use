@@ -70,10 +70,12 @@ export interface PostInputFocusResult {
 }
 
 export interface PointerHitTestResult {
+  api?: "WindowFromPoint";
   rawHwndAtPoint?: number;
   hwndAtPoint?: number;
   window?: WindowRef;
   processName?: string;
+  className?: string;
   matchesTarget?: boolean;
 }
 

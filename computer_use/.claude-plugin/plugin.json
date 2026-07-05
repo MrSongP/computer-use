@@ -17,9 +17,12 @@
   "mcpServers": {
     "computer-use": {
       "command": "node",
+      "env": {
+        "COMPUTER_USE_TRACE": "1"
+      },
+      "cwd": "${CLAUDE_PLUGIN_ROOT}",
       "args": [
-        "-e",
-        "const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const {pathToFileURL}=require('node:url');const rel='dist/src/adapters/claude-code/mcp-entrypoint.js';const roots=[process.env.CLAUDE_PLUGIN_ROOT,process.env.PLUGIN_ROOT,path.join(process.cwd(),'computer_use'),path.join(os.homedir(),'.claude/plugins/cache/computer-use-local/computer-use/0.1.0'),process.cwd()].filter(Boolean);const root=roots.find(r=>fs.existsSync(path.join(r,rel)));if(!root){console.error('computer-use mcp entrypoint not found; searched '+roots.join(' | '));process.exit(1);}import(pathToFileURL(path.join(root,rel)).href).then(m=>m.createClaudeCodeMcpEntrypoint().start()).catch(e=>{console.error(e&&e.stack||e);process.exit(1);});"
+        "${CLAUDE_PLUGIN_ROOT}/dist/src/adapters/claude-code/mcp-entrypoint.js"
       ]
     }
   }

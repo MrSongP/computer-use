@@ -72,7 +72,9 @@ The native host targets `net8.0-windows10.0.19041.0` for Windows SDK C#/WinRT pr
 
 ## Trace / Debug
 
-- Trace defaults to off.
+- The packaged Codex and Claude Code plugins enable trace by default.
+- Each installed plugin writes to its own `<plugin-root>/.artifacts/computer-use-trace/` directory. Claude Code resolves its root through the host-provided `${CLAUDE_PLUGIN_ROOT}` variable; Codex resolves `cwd: "."` relative to the installed plugin. No user name, drive letter, cache directory, or plugin version is hard-coded.
+- The reusable runtime API still defaults trace to off when it is created outside the packaged plugin manifests.
 - Runtime config: `createWindowsRuntime({ trace: { enabled: true, outputDir: "..." } })`
 - Environment variables: `COMPUTER_USE_TRACE=1` and optional `COMPUTER_USE_TRACE_DIR=...`
 - Request-level override: `meta.computerUseTrace = { enabled: true, outputDir: "..." }`
