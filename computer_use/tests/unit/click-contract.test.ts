@@ -6,7 +6,7 @@ const windowRef = { id: 101, app: "demo.exe" } as const;
 const snapshotWindowRef = {
   ...windowRef,
   rect: { left: 10, top: 20, right: 210, bottom: 220 },
-  visibleClickableRegion: { left: 0, top: 0, right: 200, bottom: 200 },
+  screenshotWindowRegion: { left: 0, top: 0, right: 200, bottom: 200 },
   screenshotCoordinateScale: { x: 1, y: 1 }
 } as const;
 

@@ -2,8 +2,9 @@
 
 `doc/` is the human-facing documentation area for the `computer_use` project. It explains what the project is, what it supports, where the implementation lives, and which verification evidence proves the current capability surface.
 
-Agent execution rules, maintenance harnesses, and test-agent prompts live outside `doc/`:
+Repository-wide coding rules, agent execution rules, maintenance harnesses, and test-agent prompts live outside `doc/`:
 
+- `AGENTS.md`
 - `.claude/computer-use-harness.md`
 - `.claude/computer-use-maintenance-checklist.md`
 - `.claude/computer-use-installation-harness.md`
@@ -31,7 +32,7 @@ Keep `doc/` focused on stable project documentation:
 - Windows native design boundaries
 - frame caching and visual change gate requirements / 帧缓存与视觉变化门控需求
 
-Do not put agent harnesses, task checklists, temporary investigation notes, trace artifacts, or phase-scaffold notes in `doc/`. Put agent-facing operating rules in `.claude/` and `.agents/`, and put behavior guarantees in tests whenever possible.
+Do not put agent harnesses, task checklists, temporary investigation notes, trace artifacts, or phase-scaffold notes in `doc/`. Put repository-wide coding rules in `AGENTS.md`, specialized agent-facing operating rules in `.claude/` and `.agents/`, and behavior guarantees in tests whenever possible.
 
 ## Code Anchors
 

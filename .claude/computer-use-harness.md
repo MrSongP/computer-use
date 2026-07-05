@@ -6,7 +6,7 @@ This file is the current operating contract for agents using or evaluating the `
 
 `computer_use` is a local Windows computer-use plugin for agent development. It gives an agent atomic desktop-control capabilities through MCP tools: discover apps and windows, capture window state, inspect accessibility nodes, activate windows, send pointer and keyboard input, complete standard file dialogs, and collect trace evidence for debugging.
 
-The plugin is not an application-specific assistant. It does not teach an agent how to use WeChat, QQ, Word, Blender, a browser, or any other specific app. It provides reliable atoms and clear facts; the agent composes those atoms into a workflow for the current user task.
+The plugin is not an application-specific assistant. It does not teach an agent how to use Word, Blender, a browser, or any other specific app. It provides reliable atoms and clear facts; the agent composes those atoms into a workflow for the current user task.
 
 ## Current Project Shape
 
@@ -81,7 +81,7 @@ The tool should provide facts:
 - Which app/window id, title, bounds, visibility, focus, minimized state, and health were observed.
 - Whether a launch was attempted, reused, refused, or needs tray/taskbar recovery.
 - Whether a capture succeeded, degraded, omitted text, or used a fallback path.
-- Screenshot dimensions, coordinate mapping, and clickable region metadata.
+- Screenshot dimensions and coordinate mapping through `screenshotWindowRegion`. This field is geometric capture metadata, not a clickability or hit-test guarantee.
 - UIA nodes, indexes, roles, names, values, bounds, patterns, and secondary actions when available.
 - Whether an input action was dispatched, through which coordinate/window/element plan, and what immediate diagnostics were available.
 - Trace artifact paths when trace is enabled.

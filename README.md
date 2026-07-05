@@ -53,6 +53,28 @@ npm run install:all
 
 The npm installer installs TypeScript dependencies, builds the runtime, builds the C# native host, runs an MCP smoke test, registers the local marketplace, installs the plugin, and runs a Node-based doctor check.
 
+## GitHub Distribution And Path Portability
+
+This repository is the distributable plugin source for unrelated GitHub users. Installation and runtime code must not hard-code a user name, drive letter, clone path, plugin cache directory, or installed version.
+
+- Codex resolves `.mcp.json` relative paths from the installed plugin root.
+- Claude Code uses the host-provided `${CLAUDE_PLUGIN_ROOT}` substitution.
+- Never patch Codex or Claude Code cache copies directly; change this repository, then rebuild and reinstall.
+- Maintainers and coding agents must follow the root [`AGENTS.md`](./AGENTS.md) before modifying code.
+
+## Trace / Debug Evidence
+
+The packaged Codex and Claude Code plugins enable trace by default. Each host writes into its own active installation:
+
+```text
+<plugin-root>/.artifacts/computer-use-trace/
+  <sessionId>/<turnId>/<actionId>/
+```
+
+An action normally records `request.json`, `response.json` or `error.json`, `evidence.json`, and relevant screenshots or action artifacts. Trace records tool calls and observed evidence; it does not contain hidden model reasoning.
+
+`<plugin-root>` varies by user, host, installation method, and version. Set `COMPUTER_USE_TRACE_DIR` to choose another location; never rely on an example machine's absolute path.
+
 ## Native Host Build
 
 Build only the C# Windows native host:
@@ -113,6 +135,7 @@ npm run doctor:claude
 
 ## Documentation
 
+- Repository maintenance contract: [AGENTS.md](./AGENTS.md)
 - Documentation index: [doc/README.md](./doc/README.md)
 - Project overview: [doc/computer-use.md](./doc/computer-use.md)
 - Capability matrix: [doc/acceptance/capability-matrix.md](./doc/acceptance/capability-matrix.md)

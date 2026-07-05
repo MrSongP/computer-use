@@ -91,9 +91,9 @@ const windowRefSchema: ToolInputSchema = {
       type: "boolean",
       description: "Whether rect intersects the current Windows virtual screen."
     },
-    visibleClickableRegion: {
+    screenshotWindowRegion: {
       type: "object",
-      description: "Window-relative visible region that maps screenshot coordinates back to clickable coordinates.",
+      description: "Window-relative rectangle represented by screenshot pixels. This is geometric mapping metadata, not evidence that Win32 hit-testing accepts pointer input there.",
       properties: {
         left: { type: "number" },
         top: { type: "number" },
@@ -982,22 +982,22 @@ function getBaseToolInputSchema(method: CapabilityMethod | "end_turn"): ToolInpu
     case "click":
       return {
         type: "object",
-        description: "Click at window-relative coordinates. The model chooses the target point; the runtime only resolves window-relative coordinates into screen coordinates and executes the click.",
+        description: "Click at window-relative coordinates, or at pixels from a get_window_state screenshot. Screenshot coordinates only change coordinate mapping; they do not bypass the native WindowFromPoint safety check.",
         properties: {
           window: windowRefSchema,
           x: {
             type: "number",
-            description: "Window-relative x coordinate."
+            description: "X coordinate in the selected coordinateSpace (window by default)."
           },
           y: {
             type: "number",
-            description: "Window-relative y coordinate."
+            description: "Y coordinate in the selected coordinateSpace (window by default)."
           },
           coordinateSpace: {
             type: "string",
             enum: ["window", "screenshot"],
             default: "window",
-            description: "Coordinate space for x/y. Use screenshot only with window metadata returned by get_window_state."
+            description: "Interpret x/y as window-relative pixels or screenshot pixels. screenshot requires the exact state.window returned with that screenshot and does not bypass native pointer hit-testing."
           },
           click_count: {
             type: "integer",

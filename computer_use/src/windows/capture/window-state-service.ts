@@ -104,7 +104,7 @@ export function enrichWindowStateCoordinateMetadata(
         bottom: virtualScreen.originY + virtualScreen.height
       })
     : rect;
-  const visibleClickableRegion = visibleScreenRect
+  const screenshotWindowRegion = visibleScreenRect
     ? {
         left: visibleScreenRect.left - rect.left,
         top: visibleScreenRect.top - rect.top,
@@ -112,8 +112,8 @@ export function enrichWindowStateCoordinateMetadata(
         bottom: visibleScreenRect.bottom - rect.top
       }
     : undefined;
-  const regionWidth = Math.max(1, (visibleClickableRegion?.right ?? rect.right - rect.left) - (visibleClickableRegion?.left ?? 0));
-  const regionHeight = Math.max(1, (visibleClickableRegion?.bottom ?? rect.bottom - rect.top) - (visibleClickableRegion?.top ?? 0));
+  const regionWidth = Math.max(1, (screenshotWindowRegion?.right ?? rect.right - rect.left) - (screenshotWindowRegion?.left ?? 0));
+  const regionHeight = Math.max(1, (screenshotWindowRegion?.bottom ?? rect.bottom - rect.top) - (screenshotWindowRegion?.top ?? 0));
   const screenshotCoordinateScale = {
     x: regionWidth / Math.max(1, state.screenshot.width),
     y: regionHeight / Math.max(1, state.screenshot.height)
@@ -123,7 +123,7 @@ export function enrichWindowStateCoordinateMetadata(
     ...state,
     window: {
       ...state.window,
-      visibleClickableRegion,
+      screenshotWindowRegion,
       screenshotCoordinateScale
     },
     screenshot: {
@@ -131,14 +131,14 @@ export function enrichWindowStateCoordinateMetadata(
       coordinateSpace: "screenshot",
       coordinateMapping: {
         origin: {
-          windowX: visibleClickableRegion?.left ?? 0,
-          windowY: visibleClickableRegion?.top ?? 0,
+          windowX: screenshotWindowRegion?.left ?? 0,
+          windowY: screenshotWindowRegion?.top ?? 0,
           screenX: visibleScreenRect?.left ?? rect.left,
           screenY: visibleScreenRect?.top ?? rect.top
         },
         scale: screenshotCoordinateScale,
         windowRect: rect,
-        visibleClickableRegion
+        screenshotWindowRegion
       }
     }
   };

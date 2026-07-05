@@ -56,12 +56,12 @@ test("toPointerClick converts window-relative coordinates when rect is available
   );
 });
 
-test("toPointerClick converts screenshot coordinates through visible region and scale", () => {
+test("toPointerClick converts screenshot pixels through the screenshot window region and scale", () => {
   assert.deepEqual(
     toPointerClick({
       window: {
         ...windowWithRect,
-        visibleClickableRegion: { left: 25, top: 50, right: 225, bottom: 250 },
+        screenshotWindowRegion: { left: 25, top: 50, right: 225, bottom: 250 },
         screenshotCoordinateScale: { x: 2, y: 4 }
       },
       coordinateSpace: "screenshot",

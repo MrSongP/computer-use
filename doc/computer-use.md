@@ -1,6 +1,6 @@
 # computer_use Project Overview
 
-`computer_use` is a local Windows computer-use plugin for Codex and Claude Code. It exposes atomic desktop automation tools through a TypeScript runtime, an MCP server, and a turn-scoped Windows native host.
+`computer_use` is a distributable Windows computer-use plugin for Codex and Claude Code. It is maintained for GitHub installation across unrelated machines, not as a single-developer demo. It exposes atomic desktop automation tools through a TypeScript runtime, an MCP server, and a turn-scoped Windows native host.
 
 The plugin is built for agents. It provides facts and actions for Windows UI automation; agents remain responsible for choosing the correct app, interpreting task intent, verifying destinations, and deciding when a workflow is complete.
 
@@ -19,7 +19,7 @@ The runtime exposes these capabilities:
 
 `launch_app` uses a reuse-or-launch policy by default. When an existing session is detected, it returns guidance for restoring the app through `windows.shell.taskbar`; only an explicit `force_new` request should create a new instance.
 
-`get_window_state` returns the canonical window object for follow-up calls, screenshot metadata, coordinate mapping, visible/clickable region metadata, optional structured UIA text, capture diagnostics, and trace artifact paths when trace is enabled.
+`get_window_state` returns the canonical window object for follow-up calls, screenshot metadata, coordinate mapping through `screenshotWindowRegion`, optional structured UIA text, capture diagnostics, and trace artifact paths when trace is enabled. `screenshotWindowRegion` is geometric mapping metadata and is not evidence that Win32 hit-testing will accept pointer input.
 
 Dialog helpers complete only local standard Windows dialogs. They do not send, upload, publish, or submit anything inside the destination app.
 
@@ -59,6 +59,18 @@ npm run install:all
 
 The installer builds the TypeScript runtime, builds the C# native host, runs the MCP smoke test, registers the local marketplace, installs the plugin, and runs the relevant doctor check.
 
+## Installation Roots And Trace
+
+All installation paths are host-resolved and machine-independent:
+
+- Codex resolves plugin-relative MCP paths from the installed plugin root.
+- Claude Code provides `${CLAUDE_PLUGIN_ROOT}` for the active installed copy.
+- No manifest, bootstrap, installer, or runtime path may contain a fixed account name, drive, cache path, clone path, or plugin version.
+
+The packaged plugins enable trace and default to `<plugin-root>/.artifacts/computer-use-trace/`. The reusable runtime library remains opt-in when used outside the packaged manifests. `COMPUTER_USE_TRACE_DIR` overrides the output directory.
+
+Trace output is grouped by `sessionId/turnId/actionId` and contains tool request/response evidence and related artifacts. It does not expose hidden model reasoning.
+
 ## Development Checks
 
 Run the default checks from the repository root:
@@ -92,3 +104,5 @@ npm run doctor:claude
 ## Documentation Boundary
 
 `doc/` contains project documentation for humans. Agent-specific operating contracts live in `.claude/` and `.agents/`. Temporary investigation notes, trace artifacts, and one-off repro evidence should not be committed as long-term documentation.
+
+Repository-wide maintenance requirements, mandatory pre-edit reading, portability constraints, and verification commands are defined in `AGENTS.md`.

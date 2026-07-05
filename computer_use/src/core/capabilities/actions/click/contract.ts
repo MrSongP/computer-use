@@ -12,7 +12,7 @@ import type { CapabilityDefinition } from "../../../../core/runtime/capability-r
 
 export const clickCapability: CapabilityDefinition = {
   method: "click",
-  summary: "Click at window-relative coordinates.",
+  summary: "Click at window-relative coordinates, or at pixels from the latest window screenshot.",
   requiresWindowActivation: true
 };
 
@@ -55,8 +55,8 @@ function ensureScreenshotCoordinateMetadata(window: ClickParams["window"]): void
   if (!isFiniteRect(window.rect)) {
     missing.push("window.rect");
   }
-  if (!isFiniteRect(window.visibleClickableRegion)) {
-    missing.push("window.visibleClickableRegion");
+  if (!isFiniteRect(window.screenshotWindowRegion)) {
+    missing.push("window.screenshotWindowRegion");
   }
   if (
     typeof window.screenshotCoordinateScale?.x !== "number" ||
