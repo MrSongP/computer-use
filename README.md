@@ -105,6 +105,7 @@ The .NET build targets `net8.0-windows10.0.19041.0` so the native host can consu
 - `list_apps`, `list_windows`, `get_window`, `launch_app`
 - `get_window_state` with direct MCP image content for screenshots and structured UIA nodes
 - `click`, `click_element`, `press_key`, `type_text`, `scroll`, `set_value`, `drag`, `perform_secondary_action`, `activate_window`
+- `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`
 - `end_turn`, turn lifecycle, physical Escape interrupt handling, and trace evidence
 - Codex adapter, Claude Code MCP adapter, and Windows native-host bridge
 
@@ -137,9 +138,11 @@ npm run doctor:claude
 
 - Repository maintenance contract: [AGENTS.md](./AGENTS.md)
 - Documentation index: [doc/README.md](./doc/README.md)
-- Project overview: [doc/computer-use.md](./doc/computer-use.md)
+- Architecture overview: [doc/architecture/overview.md](./doc/architecture/overview.md)
+- Windows native interface: [doc/architecture/windows-native-interface.md](./doc/architecture/windows-native-interface.md)
 - Capability matrix: [doc/acceptance/capability-matrix.md](./doc/acceptance/capability-matrix.md)
-- Windows native interface: [doc/windows_native_interface/windows-native-interface-design.md](./doc/windows_native_interface/windows-native-interface-design.md)
+- Testing strategy: [doc/development/testing.md](./doc/development/testing.md)
+- Manual plugin testing: [doc/development/manual-testing.md](./doc/development/manual-testing.md)
 - Agent harness: [.claude/computer-use-harness.md](./.claude/computer-use-harness.md) and [.agents/computer-use-harness.md](./.agents/computer-use-harness.md)
 
 ## Windows Notes

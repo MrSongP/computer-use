@@ -13,6 +13,9 @@ This matrix records the supported capability surface, implementation anchors, an
 | `get_window_state` | `done` | `src/core/capabilities/capture/get-window-state` + `src/windows/capture/window-state-service.ts` | `tests/unit/window-state-service.test.ts`、`tests/unit/native-host-driver.test.ts`、`tests/integration/native-host-p5-smoke.test.ts` |
 | `click` | `done` | `src/core/capabilities/actions/click` + `src/windows/input/pointer-input-service.ts` | `tests/unit/pointer-input-service.test.ts`、`tests/integration/action-lane.test.ts` |
 | `click_element` | `done` | `src/core/capabilities/actions/click-element` + `src/windows/uia/element-interaction-service.ts` | `tests/unit/element-interaction-service.test.ts`、`tests/integration/native-host-p5-smoke.test.ts` |
+| `select_file_in_dialog` | `done` | `src/core/capabilities/actions/common-dialog-path` + `src/windows/dialogs/common-dialog-service.ts` | `tests/integration/common-dialog-helper.test.ts` |
+| `select_folder_in_dialog` | `done` | `src/core/capabilities/actions/common-dialog-path` + `src/windows/dialogs/common-dialog-service.ts` | `tests/integration/common-dialog-helper.test.ts` |
+| `set_save_path_in_dialog` | `done` | `src/core/capabilities/actions/common-dialog-path` + `src/windows/dialogs/common-dialog-service.ts` | `tests/integration/common-dialog-helper.test.ts` |
 | `press_key` | `done` | `src/core/capabilities/actions/press-key` + `src/windows/input/keyboard-input-service.ts` | `tests/unit/key-parser.test.ts`、`tests/unit/keyboard-input-service.test.ts` |
 | `type_text` | `done` | `src/core/capabilities/actions/type-text` + `src/windows/input/text-input-service.ts` | `tests/unit/text-input-service.test.ts` |
 | `scroll` | `done` | `src/core/capabilities/actions/scroll` + `src/windows/input/pointer-input-service.ts` | `tests/unit/pointer-input-service.test.ts` |
@@ -25,5 +28,6 @@ This matrix records the supported capability surface, implementation anchors, an
 ## Maintenance Rules
 
 - `done` means the contract, handler, service, bridge/runtime path, host exposure, and test evidence exist.
+- `tests/integration/native-host-p5-smoke.test.ts` exercises every non-dialog action against the real Windows native host and fixture application; common-dialog helpers remain isolated because they target separate modal Windows dialog handles.
 - For implementation detail, start from the code anchors and tests in this table.
 - If capability behavior changes, update the relevant code anchor or verification entry here.
