@@ -45,7 +45,7 @@ The native host targets `net8.0-windows10.0.19041.0` for Windows SDK C#/WinRT pr
 
 - Discovery / launch: `list_apps`, `list_windows`, `get_window`, `launch_app`
 - Capture / UIA: `get_window_state`, `click_element`, `set_value`, `perform_secondary_action`
-- Action / lifecycle: `activate_window`, `click`, `press_key`, `type_text`, `scroll`, `drag`, `end_turn`
+- Action / lifecycle: `activate_window`, `click`, `press_key`, `type_text`, `scroll`, `drag`, `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`, `end_turn`
 - Trace/debug: environment, runtime config, and request meta switches
 
 ## Scripts
@@ -64,7 +64,7 @@ The native host targets `net8.0-windows10.0.19041.0` for Windows SDK C#/WinRT pr
 
 - On Windows, `createWindowsRuntime()` defaults to the native-host bridge. The .NET native host is released on lifecycle close/reset and after a short idle window rather than kept alive as a performance-resident service.
 - Tests use a mock bridge by default to avoid accidental real desktop input.
-- The native-host smoke test validates screenshots and UIA pattern actions against a Windows Forms fixture.
+- The native-host smoke test validates capture plus every non-dialog action against a Windows Forms fixture; dialog helpers have focused integration coverage for their filesystem and keystroke contract.
 - `get_window_state` exposes capture degradation diagnostics. When WGC fails and the native host falls back to GDI, the response carries `screenshot.degradedReason: "wgc_failed"`, `screenshot.gdiFallbackAt`, and `capture.degradedReasons`.
 - `get_window_state.window.health` exposes Win32 responsiveness status, including `hung` and `isResponding`, so callers can stop input when a target app is not responding.
 - Interrupted turns and stale unfinished turns are force-cleaned through the lifecycle manager. Native-host resets dispose the resident host process before the next turn continues.

@@ -50,6 +50,8 @@ Do not justify keeping a stale native host alive as a latency optimization. An i
 - `native-host/ComputerUse.NativeHost` owns Win32, WGC, UIA, COM, and low-level input primitives.
 - Adapter schemas must stay aligned with shared core contracts. Do not let Codex and Claude Code drift into different tool semantics.
 - New capabilities must land with contract, handler, Windows service or bridge support, and verification. Do not create standalone design docs as a substitute for tests.
+- Every non-dialog action capability must remain exercised against `tests/fixtures/ComputerUse.P5SmokeApp.cs` through `tests/integration/native-host-p5-smoke.test.ts`, so pointer, keyboard, text, activation, and UIA behavior reach the real Windows native host instead of stopping at mocks.
+- Standard dialog helpers keep dedicated integration coverage in `tests/integration/common-dialog-helper.test.ts` because they operate on separate modal dialog handles; their filesystem validation and composed keystroke contract must still be tested for all three helpers.
 
 ## Capability Boundary
 
