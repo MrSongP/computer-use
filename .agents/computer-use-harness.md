@@ -58,13 +58,18 @@ Do not justify keeping a stale native host alive as a latency optimization. An i
 The plugin provides these categories of capabilities:
 
 - Discovery: `list_apps`, `list_windows`, `get_window`, `launch_app`
-- Capture: `get_window_state`
-- Window focus: `activate_window`
-- Pointer input: `click`, `drag`, `scroll`
-- Keyboard/text input: `press_key`, `type_text`
-- Accessibility actions: `click_element`, `set_value`, `perform_secondary_action`
-- Standard dialog helpers: `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`
-- Turn/debug lifecycle: `end_turn`, trace metadata through tool calls
+- Action: `get_window_state`, `activate_window`, `click`, `drag`, `scroll`, `press_key`, `type_text`, `click_element`, `set_value`, `perform_secondary_action`
+- Dialog: `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`
+- Lifecycle: `end_turn`, trace metadata through tool calls
+
+The MCP catalog carries progressive-disclosure metadata on every tool descriptor. The compatible default is still a complete `tools/list` response because Codex and Claude Code hosts may load MCP tools differently, but agents and progressive clients should treat the phases as ordered:
+
+1. Discovery first, to identify apps and canonical windows.
+2. Action next, with `get_window_state` as the observation step before mutating input actions.
+3. Dialog helpers only after the latest state shows a standard Windows file, folder, or save dialog.
+4. Lifecycle after the workflow is complete or abandoned.
+
+Tool annotations and descriptor metadata are guidance, not a safety or permission boundary. Confirmation policy, destination verification, and stale-state handling still belong to the agent workflow.
 
 The plugin does not provide these things:
 
@@ -157,7 +162,7 @@ Recommended output shape:
 - `code` for known failure classes.
 - `result` object on success, never an unexplained `null` for meaningful operations.
 - `diagnostics` for truncation, filters, fallback drivers, timeout reasons, and schema/runtime metadata.
-- `window` for canonical target references after capture or rehydration.
+- `window` for canonical target references after state observation or rehydration.
 - `capture` for screenshot/text availability, degraded reasons, omitted text, and recommended fallbacks.
 - `trace` only for debug evidence, with absolute paths when trace is enabled.
 - `followUpActions` or guidance when the next safe step is known.
@@ -208,11 +213,11 @@ Agents using this plugin should follow this loop:
 
 1. Discover the app/window with `list_apps` or `list_windows`.
 2. Rehydrate or select a canonical window with `get_window` when needed.
-3. Capture with `get_window_state` only as often as needed for the next decision.
-4. Choose the next atomic action from the returned facts.
+3. Observe with `get_window_state` only after a canonical window exists and only as often as needed for the next decision.
+4. Choose the next atomic action from the returned facts; keep dialog helpers out of scope until a standard Windows dialog is observed.
 5. Include an agent-written `computerUseStatus.detail` on each tool call when possible, using a short concrete phrase the user can understand at a glance.
 6. Execute batched input when the target is stable.
-7. Capture again to verify progress or completion.
+7. Observe again with `get_window_state` to verify progress or completion.
 8. Call `end_turn({})` once before the final answer after a completed Computer Use workflow.
 9. Stop on explicit failure, locked desktop, stale state that cannot be recovered, unsafe side effects, or ambiguous destination.
 

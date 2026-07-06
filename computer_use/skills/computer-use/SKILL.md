@@ -30,6 +30,15 @@ For this repository, the plugin implementation lives under the `computer_use` pl
 
 If this plugin is installed and enabled, the session should expose MCP tools for the capabilities listed in the API reference. Use those tools directly. The local MCP server is declared by `.mcp.json` in the plugin root; installed or built copies normally execute `dist/src/adapters/claude-code/mcp-entrypoint.js`, whose source entrypoint is `src/adapters/claude-code/mcp-entrypoint.ts`.
 
+The tool catalog is designed for progressive disclosure while remaining compatible with hosts that load all MCP tools at once. Treat the lanes in this order:
+
+1. Discovery: `list_apps`, `list_windows`, `get_window`, `launch_app`.
+2. Action: `get_window_state`, `activate_window`, `click`, `drag`, `scroll`, `press_key`, `type_text`, `click_element`, `set_value`, `perform_secondary_action`.
+3. Dialog: `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`.
+4. Lifecycle: `end_turn`.
+
+Start every workflow with Discovery. Enter the Action lane only after a canonical window has been selected or rehydrated. Within Action, use `get_window_state` as the observation step before mutating input actions, and verify meaningful app-level effects with a later `get_window_state`. Keep Dialog tools out of the working set unless the latest state shows a standard Windows file, folder, or save dialog. The MCP descriptor `_meta` fields and standard annotations carry this lane information for compatible hosts; do not treat annotations as a safety boundary or as permission to perform risky UI actions.
+
 On the first Computer Use task in a session, make a lightweight discovery call:
 
 ```json

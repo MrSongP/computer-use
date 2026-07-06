@@ -92,6 +92,15 @@ Interrupted turns and stale unfinished turns converge on lifecycle reset. Reset 
 
 The canonical public inventory is the [capability matrix](../acceptance/capability-matrix.md).
 
+The MCP tool catalog uses progressive-disclosure metadata rather than host-specific hiding. Every tool remains callable for Codex and Claude Code compatibility, while each descriptor carries a lane, phase, order, title, and MCP annotations:
+
+- Discovery: `list_apps`, `list_windows`, `get_window`, `launch_app`
+- Action: `get_window_state`, `activate_window`, `click`, `drag`, `scroll`, `press_key`, `type_text`, `click_element`, `set_value`, `perform_secondary_action`
+- Dialog: `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`
+- Lifecycle: `end_turn`
+
+Agents and progressive clients should start with discovery, use action tools only after selecting a canonical window and current state supports the target, and reserve dialog helpers for verified standard Windows dialogs. `get_window_state` is the first action-lane tool because it observes the selected window before mutating input actions. The default MCP response remains a complete tool list because host support for `tools/list` pagination and list-change refresh is not uniform.
+
 Important invariants:
 
 - `get_window_state` is both observation and window canonicalization.

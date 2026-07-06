@@ -6,6 +6,10 @@ import type {
   CodexCapabilityDescriptor,
   CodexPluginContract
 } from "./plugin-contract.js";
+import {
+  getToolAnnotations,
+  getToolDisclosure
+} from "../../core/runtime/tool-disclosure.js";
 
 export interface CreateCodexAdapterOptions {
   transport?: CodexHelperTransport;
@@ -26,14 +30,20 @@ export function createCodexAdapter(
     ...capabilities.list().map((item) => ({
       name: item.method,
       rpcMethod: item.method,
+      title: getToolDisclosure(item.method).title,
       summary: item.summary,
-      requiresWindowActivation: item.requiresWindowActivation
+      requiresWindowActivation: item.requiresWindowActivation,
+      disclosure: getToolDisclosure(item.method),
+      annotations: getToolAnnotations(item.method)
     })),
     {
       name: "end_turn",
       rpcMethod: "end_turn",
+      title: getToolDisclosure("end_turn").title,
       summary: "Close the active Codex turn and flush lifecycle state.",
-      requiresWindowActivation: false
+      requiresWindowActivation: false,
+      disclosure: getToolDisclosure("end_turn"),
+      annotations: getToolAnnotations("end_turn")
     }
   ];
 
