@@ -11,6 +11,10 @@ import type {
 } from "./plugin-contract.js";
 import { ClaudeCodeAdapterRpcError } from "./plugin-contract.js";
 import { createClaudeAdapter } from "./index.js";
+import {
+  getToolDisclosureMeta,
+  progressiveDisclosureOrder
+} from "../../core/runtime/tool-disclosure.js";
 
 export const CLAUDE_HELPER_USE_MOCK_BRIDGE_ENV = "COMPUTER_USE_TEST_USE_MOCK_BRIDGE";
 
@@ -153,6 +157,11 @@ export class ClaudeMcpStdioServer {
 
       case "tools/list":
         this.writeResult(request.id, {
+          _meta: {
+            "computer-use/disclosureMode": "compatible-full-list",
+            "computer-use/disclosurePhases": progressiveDisclosureOrder,
+            "computer-use/disclosureContract": "Agents should begin with discovery tools, use get_window_state as the first action-lane observation after selecting a canonical window, use mutating action tools only after current state supports the target, and use dialog tools only for verified standard Windows dialogs."
+          },
           tools: this.adapter.capabilities.map(toMcpToolDescriptor)
         });
         return;
@@ -243,7 +252,10 @@ function isMcpRequest(value: unknown): value is McpRequest & { id: JsonRpcId } {
 function toMcpToolDescriptor(capability: ClaudeCodeCapabilityDescriptor): unknown {
   const descriptor: Record<string, unknown> = {
     name: capability.name,
+    title: capability.title,
     description: capability.summary,
+    annotations: capability.annotations,
+    _meta: getToolDisclosureMeta(capability.name),
     inputSchema: capability.inputSchema
   };
   if (capability.outputSchema) {

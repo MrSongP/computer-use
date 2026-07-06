@@ -102,12 +102,13 @@ The .NET build targets `net8.0-windows10.0.19041.0` so the native host can consu
 
 ## Capabilities
 
-- `list_apps`, `list_windows`, `get_window`, `launch_app`
-- `get_window_state` with direct MCP image content for screenshots and structured UIA nodes
-- `click`, `click_element`, `press_key`, `type_text`, `scroll`, `set_value`, `drag`, `perform_secondary_action`, `activate_window`
-- `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`
-- `end_turn`, turn lifecycle, physical Escape interrupt handling, and trace evidence
+- Discovery: `list_apps`, `list_windows`, `get_window`, `launch_app`
+- Action: `get_window_state` with direct MCP image content for screenshots and structured UIA nodes, plus `click`, `click_element`, `press_key`, `type_text`, `scroll`, `set_value`, `drag`, `perform_secondary_action`, `activate_window`
+- Dialog: `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`
+- Lifecycle: `end_turn`, turn lifecycle, physical Escape interrupt handling, and trace evidence
 - Codex adapter, Claude Code MCP adapter, and Windows native-host bridge
+
+MCP tool descriptors include progressive-disclosure metadata so compatible hosts can reveal discovery first, then the action lane after a canonical window is selected, and dialog helpers only after a standard Windows dialog is observed. `get_window_state` is part of the action lane as the observation step before input actions. The default catalog remains complete for host compatibility.
 
 `launch_app` blocks duplicate cold launches by default. If an existing session is detected, the hook returns guidance to restore the app from `windows.shell.taskbar`; only an explicit `force_new` bypasses this behavior.
 

@@ -13,6 +13,7 @@ Use this checklist before claiming a `computer_use` change is complete.
 - Codex behavior remains aligned with the shared contract.
 - Claude Code behavior remains aligned with the shared contract.
 - Schema or contract changes are reflected in both adapters.
+- Progressive-disclosure metadata still classifies every exposed tool as discovery, action, dialog, or lifecycle.
 - Manifest, MCP, marketplace, and skill changes are reflected in README and the installation harness.
 - No user name, drive, clone path, cache directory, or installed version is hard-coded.
 - Claude Code paths use `${CLAUDE_PLUGIN_ROOT}` or another documented host substitution; Codex paths remain relative to the installed plugin or marketplace root.

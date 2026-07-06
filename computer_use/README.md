@@ -45,10 +45,13 @@ The native host targets `net8.0-windows10.0.19041.0` for Windows SDK C#/WinRT pr
 
 ## Capabilities
 
-- Discovery / launch: `list_apps`, `list_windows`, `get_window`, `launch_app`
-- Capture / UIA: `get_window_state`, `click_element`, `set_value`, `perform_secondary_action`
-- Action / lifecycle: `activate_window`, `click`, `press_key`, `type_text`, `scroll`, `drag`, `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`, `end_turn`
+- Discovery: `list_apps`, `list_windows`, `get_window`, `launch_app`
+- Action: `get_window_state`, `activate_window`, `click`, `press_key`, `type_text`, `scroll`, `drag`, `click_element`, `set_value`, `perform_secondary_action`
+- Dialog: `select_file_in_dialog`, `select_folder_in_dialog`, `set_save_path_in_dialog`
+- Lifecycle: `end_turn`
 - Trace/debug: environment, runtime config, and request meta switches
+
+MCP `tools/list` returns the complete compatible catalog, plus progressive-disclosure metadata on each tool descriptor. Hosts or wrappers that support staged presentation can reveal discovery first, action after a canonical window is selected, and dialog helpers only after a standard Windows dialog is observed. `get_window_state` is part of the action lane as the observation step before input actions.
 
 ## Scripts
 

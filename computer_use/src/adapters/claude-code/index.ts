@@ -11,6 +11,10 @@ import {
   type ClaudeCodePluginContract
 } from "./plugin-contract.js";
 import { getClaudeToolInputSchema, getClaudeToolOutputSchema } from "./tool-schema.js";
+import {
+  getToolAnnotations,
+  getToolDisclosure
+} from "../../core/runtime/tool-disclosure.js";
 
 export function createClaudeAdapter(
   runtime: ExecutionContext,
@@ -30,16 +34,22 @@ export function createClaudeAdapter(
     ...capabilities.list().map((item) => ({
       name: item.method,
       rpcMethod: item.method,
+      title: getToolDisclosure(item.method).title,
       summary: item.summary,
       requiresWindowActivation: item.requiresWindowActivation,
+      disclosure: getToolDisclosure(item.method),
+      annotations: getToolAnnotations(item.method),
       inputSchema: getClaudeToolInputSchema(item.method),
       outputSchema: getAdvertisedOutputSchema(item.method)
     })),
     {
       name: "end_turn",
       rpcMethod: "end_turn",
+      title: getToolDisclosure("end_turn").title,
       summary: "Call once before the final answer to show completion, close the active Claude Code computer-use turn, and flush lifecycle state.",
       requiresWindowActivation: false,
+      disclosure: getToolDisclosure("end_turn"),
+      annotations: getToolAnnotations("end_turn"),
       inputSchema: getClaudeToolInputSchema("end_turn"),
       outputSchema: getClaudeToolOutputSchema("end_turn")
     }

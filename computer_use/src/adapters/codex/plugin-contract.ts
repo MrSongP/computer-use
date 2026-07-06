@@ -4,14 +4,21 @@ import type {
   JsonRpcErrorResponse,
   JsonRpcMeta
 } from "../../core/contracts/rpc.js";
+import type {
+  ToolAnnotations,
+  ToolDisclosure
+} from "../../core/runtime/tool-disclosure.js";
 
 export type CodexAdapterMethod = CapabilityMethod | "end_turn";
 
 export interface CodexCapabilityDescriptor {
   name: CodexAdapterMethod;
   rpcMethod: CodexAdapterMethod;
+  title: string;
   summary: string;
   requiresWindowActivation: boolean;
+  disclosure: ToolDisclosure;
+  annotations: ToolAnnotations;
 }
 
 export interface CodexInvokeOptions {
