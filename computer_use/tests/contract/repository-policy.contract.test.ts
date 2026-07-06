@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createScaffoldRuntime } from "../../src/index.js";
 import { createClaudeAdapter } from "../../src/adapters/claude-code/index.js";
 import { createCodexAdapter } from "../../src/adapters/codex/index.js";
+import { getToolDisclosure } from "../../src/core/runtime/tool-disclosure.js";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const repositoryRoot = path.dirname(pluginRoot);
@@ -31,7 +32,13 @@ const canonicalMarkdownFiles = [
   "doc/architecture/overview.md",
   "doc/architecture/windows-native-interface.md",
   "doc/development/manual-testing.md",
-  "doc/development/testing.md"
+  "doc/development/testing.md",
+  "repo_learning/00-overview-architecture.md",
+  "repo_learning/capability-handlers-architecture.md",
+  "repo_learning/csharp-native-host-architecture.md",
+  "repo_learning/external-adapter-and-dispatcher-architecture.md",
+  "repo_learning/trace-lifecycle-and-interrupt-architecture.md",
+  "repo_learning/windows-services-and-bridge-architecture.md"
 ].sort();
 
 test("agent-facing mirror documents stay byte-for-byte synchronized", async () => {
@@ -121,6 +128,23 @@ test("Codex and Claude Code expose the same shared capability surface", () => {
     codex.capabilities.map((capability) => capability.name).sort(),
     claude.capabilities.map((capability) => capability.name).sort()
   );
+});
+
+test("every exposed computer-use tool has progressive disclosure metadata", () => {
+  const scaffold = createScaffoldRuntime();
+  const claude = createClaudeAdapter(scaffold.runtime, scaffold.dispatcher, scaffold.capabilities);
+  const codex = createCodexAdapter(scaffold.runtime, scaffold.dispatcher, scaffold.capabilities);
+
+  for (const adapter of [claude, codex]) {
+    for (const capability of adapter.capabilities) {
+      const disclosure = getToolDisclosure(capability.name);
+      assert.equal(capability.title, disclosure.title);
+      assert.equal(capability.disclosure.lane, disclosure.lane);
+      assert.equal(capability.disclosure.phase, disclosure.phase);
+      assert.equal(capability.annotations.title, disclosure.title);
+      assert.equal(capability.annotations.readOnlyHint, disclosure.readOnly);
+    }
+  }
 });
 
 test("the real Windows smoke app covers every non-dialog action capability", async () => {

@@ -10,7 +10,7 @@ The goal is not to judge whether a particular application is pleasant to automat
 
 ## Scope
 
-Exercise the currently supported discovery, capture, activation, pointer, keyboard, text, UIA, dialog, lifecycle, and trace capabilities listed in the [capability matrix](../acceptance/capability-matrix.md).
+Exercise the currently supported discovery, action, dialog, lifecycle, and trace capabilities listed in the [capability matrix](../acceptance/capability-matrix.md). Action coverage includes state observation with `get_window_state`, activation, pointer, keyboard, text, and UIA controls.
 
 Do not demand:
 

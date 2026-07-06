@@ -6,14 +6,21 @@ import type {
   TurnMetadata
 } from "../../core/contracts/rpc.js";
 import type { ToolInputSchema } from "./tool-schema.js";
+import type {
+  ToolAnnotations,
+  ToolDisclosure
+} from "../../core/runtime/tool-disclosure.js";
 
 export type ClaudeCodeAdapterMethod = CapabilityMethod | "end_turn";
 
 export interface ClaudeCodeCapabilityDescriptor {
   name: ClaudeCodeAdapterMethod;
   rpcMethod: ClaudeCodeAdapterMethod;
+  title: string;
   summary: string;
   requiresWindowActivation: boolean;
+  disclosure: ToolDisclosure;
+  annotations: ToolAnnotations;
   inputSchema: ToolInputSchema;
   outputSchema?: ToolInputSchema;
 }

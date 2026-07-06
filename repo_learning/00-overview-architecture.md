@@ -66,11 +66,11 @@
 | 类别 | method |
 |---|---|
 | Discovery | `list_windows`、`get_window`、`list_apps`、`launch_app` |
-| Capture | `get_window_state` |
-| Action | `activate_window`、`click`、`click_element`、`select_file_in_dialog`、`select_folder_in_dialog`、`set_save_path_in_dialog`、`drag`、`perform_secondary_action`、`press_key`、`scroll`、`set_value`、`type_text` |
-| Turn | `end_turn`（由 adapter 自加，不进 CapabilityRegistry） |
+| Action | `get_window_state`、`activate_window`、`click`、`click_element`、`drag`、`perform_secondary_action`、`press_key`、`scroll`、`set_value`、`type_text` |
+| Dialog | `select_file_in_dialog`、`select_folder_in_dialog`、`set_save_path_in_dialog` |
+| Lifecycle | `end_turn`（由 adapter 自加，不进 CapabilityRegistry） |
 
-来源：`src/core/contracts/{action,capture,discovery}.ts`、`src/index.ts:62-78`（17 个 `register`）、`src/adapters/{codex,claude-code}/index.ts:32-46`（end_turn）。
+来源：`src/core/contracts/{action,capture,discovery}.ts`、`src/core/runtime/tool-disclosure.ts`、`src/index.ts:62-78`（17 个 `register`）、`src/adapters/{codex,claude-code}/index.ts:32-46`（end_turn）。注意：源码 contract 仍保留 `CaptureMethod` / `capture/get-window-state/` 目录；渐进式披露 lane 把 `get_window_state` 归入 Action，作为输入动作前的观察/截图步骤。
 
 ### Native Host 的 20 个 method
 

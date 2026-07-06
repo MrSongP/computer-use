@@ -28,7 +28,7 @@
 | Codex 回退 session/turn id | `codex-mcp-${process.pid}` / `request-${String(requestId)}` | `src/adapters/claude-code/mcp-server.ts:299-301` |
 | Adapter 自加方法 | `end_turn` | `src/adapters/codex/index.ts:32-37`、`src/adapters/claude-code/index.ts:38-46` |
 | Dispatcher 内置方法 | `end_turn`, `close` | `src/core/dispatcher/method-registry.ts:7` |
-| Capability 方法总数 | 17 = 12 Action + 1 Capture + 4 Discovery | `src/core/contracts/{action,capture,discovery}.ts` |
+| Capability 方法总数 | 17 个源码 capability method；渐进式披露为 4 Discovery + 10 Action（含 `get_window_state`）+ 3 Dialog，另有 adapter 自加 `end_turn` Lifecycle tool | `src/core/contracts/{action,capture,discovery}.ts`、`src/core/runtime/tool-disclosure.ts` |
 | MCP `initialize` 协议版本 | `2024-11-05`（默认） | `src/adapters/claude-code/mcp-server.ts:454-460` |
 | MCP serverInfo | `name: "computer-use"`, `version: "1.0.1"` | `src/adapters/claude-code/mcp-server.ts:143-146` |
 
@@ -224,6 +224,7 @@ MCP server 把结果包装成 MCP `tools/call` 响应，写 stdout。
 
 `createClaudeAdapter`（`src/adapters/claude-code/index.ts:29-46`）遍历 `capabilities.list()`，对每个 `CapabilityDefinition` 派生出 `ClaudeCodeCapabilityDescriptor`：
 - `name = item.method`、`rpcMethod = item.method`、`summary = item.summary`、`requiresWindowActivation = item.requiresWindowActivation`
+- `title / disclosure / annotations` 来自 `core/runtime/tool-disclosure.ts`，用于渐进式披露：Discovery 先出现，Action 在 canonical window 之后使用，Dialog 只在标准 Windows dialog 被观察到之后使用。
 - `inputSchema = getClaudeToolInputSchema(item.method)`
 - `outputSchema = getAdvertisedOutputSchema(item.method)`
 
@@ -256,18 +257,24 @@ MCP server 把结果包装成 MCP `tools/call` 响应，写 stdout。
 ```ts
 case "tools/list":
   this.writeResult(request.id, {
+    _meta: {
+      "computer-use/disclosureMode": "compatible-full-list",
+      "computer-use/disclosurePhases": ["discovery", "action", "dialog", "lifecycle"],
+      "computer-use/disclosureContract": "..."
+    },
     tools: this.adapter.capabilities.map(toMcpToolDescriptor)
   });
   return;
 ```
 
-`toMcpToolDescriptor`（`mcp-server.ts:243-254`）构造 `{name, description, inputSchema}`，若 `outputSchema` 存在则附 `outputSchema`。最终一行 `{jsonrpc: "2.0", id, result: {tools: [...]}}` 写 stdout。
+`toMcpToolDescriptor`（`mcp-server.ts:243-254`）构造 `{name, title, description, annotations, _meta, inputSchema}`，若 `outputSchema` 存在则附 `outputSchema`。每个 tool 的 `_meta` 带 `computer-use/disclosureLane`、`computer-use/disclosurePhase`、`computer-use/progressiveOrder`、`computer-use/availableAfter`、`computer-use/guidance`。默认仍返回完整工具清单，因为 Codex / Claude Code 对 `tools/list` 分页和 list-changed 刷新的支持不应被假设一致；真正的渐进披露由 descriptor metadata 和 agent workflow 共同驱动。最终一行 `{jsonrpc: "2.0", id, result: {_meta, tools: [...]}}` 写 stdout。
 
 引用：
 - `src/adapters/claude-code/index.ts:29-46`、`136-144`
 - `src/adapters/claude-code/tool-schema.ts:422-436`
 - `src/adapters/claude-code/tool-schema.ts:489-494`
 - `src/adapters/claude-code/tool-schema.ts:855-1187`
+- `src/core/runtime/tool-disclosure.ts`
 - `src/adapters/claude-code/mcp-server.ts:154-158`、`243-254`
 
 ---

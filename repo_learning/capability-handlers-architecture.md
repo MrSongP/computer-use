@@ -26,7 +26,7 @@ Hook 在 capability 路径外独立存在：`launch-app/policy-hook.ts` 由 `win
 | Discovery | `get_window` | `discovery/get-window/` | `GetWindowHandler` |
 | Discovery | `list_apps` | `discovery/list-apps/` | `ListAppsHandler` |
 | Discovery | `launch_app` | `discovery/launch-app/` | `LaunchAppHandler` |
-| Capture | `get_window_state` | `capture/get-window-state/` | `GetWindowStateHandler` |
+| Action（观察/截图） | `get_window_state` | `capture/get-window-state/` | `GetWindowStateHandler` |
 | Action | `activate_window` | `actions/activate-window/` | `ActivateWindowHandler` |
 | Action | `click` | `actions/click/` | `ClickHandler` |
 | Action | `click_element` | `actions/click-element/` | `ClickElementHandler` |
@@ -38,7 +38,7 @@ Hook 在 capability 路径外独立存在：`launch-app/policy-hook.ts` 由 `win
 | Action | `set_value` | `actions/set-value/` | `SetValueHandler` |
 | Action | `type_text` | `actions/type-text/` | `TypeTextHandler` |
 
-`ActionMethod`、`CaptureMethod`、`DiscoveryMethod` 三个 union 拼成 `CapabilityMethod`（`core/contracts/capability.ts:5`、`core/contracts/action.ts:3-15`、`core/contracts/capture.ts:3`、`core/contracts/discovery.ts:4`）。
+`ActionMethod`、`CaptureMethod`、`DiscoveryMethod` 三个源码 contract union 拼成 `CapabilityMethod`（`core/contracts/capability.ts:5`、`core/contracts/action.ts:3-15`、`core/contracts/capture.ts:3`、`core/contracts/discovery.ts:4`）。渐进式披露层另由 `core/runtime/tool-disclosure.ts` 分类：Discovery、Action、Dialog、Lifecycle，其中 `get_window_state` 归入 Action lane，作为输入动作前的观察/截图步骤。
 
 ### 17 份 `CapabilityDefinition` 与 `requiresWindowActivation`
 
@@ -214,7 +214,7 @@ sequenceDiagram
 
 ---
 
-## Capture 类 handler
+## Action lane 的观察/截图 handler
 
 ### get_window_state
 
@@ -233,7 +233,7 @@ sequenceDiagram
 
 ## Action 类 handler
 
-10 个 action handler 共享同一骨架，主要差别是调用的 Windows service 与是否取 before/after 快照。
+`get_window_state` 之外的 10 个 action handler 共享同一骨架，主要差别是调用的 Windows service 与是否取 before/after 快照。渐进式披露语义下，`get_window_state` 与这些输入/UIA handler 同属 Action lane，但它是只观察当前窗口状态的前置动作。
 
 ### activate_window
 
@@ -415,7 +415,7 @@ sequenceDiagram
 
 ### contracts/
 
-- `core/contracts/action.ts:3-15` `ActionMethod` union（12 个 method）
+- `core/contracts/action.ts:3-15` `ActionMethod` union（12 个 method；其中 3 个 dialog helper 在渐进式披露中归入 Dialog lane）
 - `core/contracts/action.ts:34-42` `ClickParams`
 - `core/contracts/action.ts:82-96` `ClickResult`
 - `core/contracts/action.ts:105-108` `PressKeyParams`
@@ -431,7 +431,7 @@ sequenceDiagram
 - `core/contracts/action.ts:269-297` `ActionRequestMap / ActionResultMap`
 - `core/contracts/app.ts:1-20` `AppIdentifier / AppDescriptor`
 - `core/contracts/capability.ts:1-5` `CapabilityMethod` union
-- `core/contracts/capture.ts:3` `CaptureMethod`
+- `core/contracts/capture.ts:3` `CaptureMethod`（源码 contract；渐进式披露中 `get_window_state` 归入 Action lane）
 - `core/contracts/capture.ts:7-15` `WindowStateParams`
 - `core/contracts/capture.ts:80-109` `WindowStateResult`
 - `core/contracts/capture.ts:131-138` `CaptureRequestMap / CaptureResultMap`

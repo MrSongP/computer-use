@@ -45,7 +45,7 @@ Windows 服务层是 computer-use 在 Windows 平台上把高层 capability（cl
 ```mermaid
 graph TB
   subgraph Core["core/capabilities/*/handler.ts"]
-    H[Action / Capture / Discovery Handler]
+    H[Action / Capture-contract / Discovery Handler]
   end
 
   subgraph Services["src/windows/ — 服务层（按 capability 分目录）"]

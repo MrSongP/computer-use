@@ -52,6 +52,7 @@ Repository contract tests enforce rules that can be determined mechanically:
 - `.agents/` and `.claude/` mirror equality;
 - public capability presence in canonical documentation;
 - Codex and Claude Code capability parity;
+- progressive-disclosure metadata on every exposed tool descriptor;
 - action-smoke and dialog-helper coverage gates;
 - portable manifest paths;
 - package/manifest version alignment;

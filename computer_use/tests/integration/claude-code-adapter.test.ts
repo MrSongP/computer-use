@@ -177,9 +177,20 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.equal(initialize.result.capabilities.tools.listChanged, false);
 
     const tools = JSON.parse(toolsLine!);
+    assert.equal(tools.result._meta["computer-use/disclosureMode"], "compatible-full-list");
+    assert.deepEqual(tools.result._meta["computer-use/disclosurePhases"], [
+      "discovery",
+      "action",
+      "dialog",
+      "lifecycle"
+    ]);
     assert.equal(tools.result.tools.some((tool: { name: string }) => tool.name === "list_windows"), true);
     assert.equal(tools.result.tools.some((tool: { name: string }) => tool.name === "end_turn"), true);
     const listWindowsTool = tools.result.tools.find((tool: { name: string }) => tool.name === "list_windows");
+    assert.equal(listWindowsTool.title, "List Open Windows");
+    assert.equal(listWindowsTool.annotations.readOnlyHint, true);
+    assert.equal(listWindowsTool._meta["computer-use/disclosureLane"], "discovery");
+    assert.equal(listWindowsTool._meta["computer-use/disclosurePhase"], "discovery");
     assert.equal(listWindowsTool.outputSchema.type, "object");
     assert.deepEqual(listWindowsTool.outputSchema.required, ["windows"]);
     const listAppsTool = tools.result.tools.find((tool: { name: string }) => tool.name === "list_apps");
@@ -190,6 +201,10 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     assert.equal(listAppsTool.outputSchema.properties.apps.items.properties.aliases.items.type, "string");
     assert.equal(listAppsTool.outputSchema.properties.apps.items.properties.processIds.items.type, "integer");
     const windowStateTool = tools.result.tools.find((tool: { name: string }) => tool.name === "get_window_state");
+    assert.equal(windowStateTool.title, "Get Window State");
+    assert.equal(windowStateTool.annotations.readOnlyHint, true);
+    assert.equal(windowStateTool._meta["computer-use/disclosureLane"], "action");
+    assert.equal(windowStateTool._meta["computer-use/disclosurePhase"], "action");
     assert.equal(windowStateTool.outputSchema, undefined);
     const launchAppTool = tools.result.tools.find((tool: { name: string }) => tool.name === "launch_app");
     assert.deepEqual(launchAppTool.outputSchema.properties.disposition.enum, ["delegated_launch", "observed_window"]);
@@ -197,6 +212,11 @@ test("claude code MCP server lists and calls computer-use tools over stdio", asy
     const clickElementTool = tools.result.tools.find((tool: { name: string }) => tool.name === "click_element");
     assert.equal(clickElementTool.outputSchema.properties.dispatched.type, "string");
     const clickTool = tools.result.tools.find((tool: { name: string }) => tool.name === "click");
+    assert.equal(clickTool.annotations.readOnlyHint, false);
+    assert.equal(clickTool.annotations.destructiveHint, false);
+    assert.equal(clickTool._meta["computer-use/disclosureLane"], "action");
+    assert.equal(clickTool._meta["computer-use/disclosurePhase"], "action");
+    assert.match(clickTool._meta["computer-use/availableAfter"], /get_window_state/);
     assert.equal(clickTool.inputSchema.required.includes("window"), true);
     assert.equal(clickTool.inputSchema.properties.window.required.includes("id"), true);
     assert.equal(clickTool.inputSchema.properties.window.required.includes("app"), true);
